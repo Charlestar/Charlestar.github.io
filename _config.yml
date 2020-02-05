@@ -1,13 +1,13 @@
 # Site settings
-title: BY Blog
-SEOTitle: 柏荧的博客 | BY Blog
-header-img: img/post-bg-desk.jpg
-email: qiubaiying@gmail.com
-description: "Every failure is leading towards success."
-keyword: "BY, BY Blog, 柏荧的博客, qiubaiying, 邱柏荧, iOS, Apple, iPhone"
-url: "http://qiubaiying.github.io"          # your host, for absolute URL
+title: ZZC's Blog                   # 博客标题
+SEOTitle: 子辰的博客 | ZZC's Blog    # 显示在浏览器上搜索的时候显示的标题
+header-img: img/post-bg-desk.jpg    # 显示在首页的背景图片
+email: charlestarzhang@gmail.com
+description: "Every failure is leading towards success."    # 网站介绍
+keyword: "ZZC, ZZC's Blog, 子辰的博客, zhangzichen, 张子辰, iOS, Apple, iPhone"
+url: "http://Charlestar.github.io"          # your host, for absolute URL
 baseurl: ""      # for example, '/blog' if your blog hosted on 'host/blog'
-github_repo: "https://github.com/qiubaiying/qiubaiying.github.io.git" # you code repository
+github_repo: "https://github.com/Charlestar/Charlestar.github.io.git" # you code repository
 
 # Sidebar settings
 sidebar: true                           # whether or not using Sidebar.
@@ -19,11 +19,11 @@ sidebar-avatar: /img/about-BY-gentle.jpg      # use absolute URL, seeing it's us
 # SNS settings
 RSS: false
 # weibo_username:     qiubaiying
-zhihu_username:     qiubaiying
-github_username:    qiubaiying
-facebook_username:  baiying.qiu.7
-jianshu_username:   e71990ada2fd
-#twitter_username:   qiubaiying
+# zhihu_username:     qiubaiying
+github_username:    Charlestar
+facebook_username:  Charles Zhang
+jianshu_username:   9833a6ffe865
+# twitter_username:   qiubaiying
 
 
 
@@ -57,7 +57,7 @@ kramdown:
 
 # 评论系统
 # Disqus（https://disqus.com/）
-# disqus_username: qiubaiying
+disqus_username: iStar
 
 # Gitalk
 gitalk:
