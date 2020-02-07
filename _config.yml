@@ -49,19 +49,19 @@ kramdown:
   input: GFM                            # use Github Flavored Markdown !important
 
 
-# 评论系统
-# Disqus（https://disqus.com/）
-disqus_username: iStar
+# # 评论系统
+# # Disqus（https://disqus.com/）
+# disqus_username: iStar
 
 
 # Gitalk
 gitalk:
   enable: true    #是否开启Gitalk评论
-  clientID: f2c84e7629bb1446c1a4                            #生成的clientID
-  clientSecret: ca6d6139d1e1b8c43f8b2e19492ddcac8b322d0d    #生成的clientSecret
-  repo: qiubaiying.github.io    #仓库名称
-  owner: qiubaiying    #github用户名
-  admin: qiubaiying
+  clientID: 584fb2dd21f3b7b68132                            #生成的clientID
+  clientSecret: 4c6d4eaa403c37a15b7433db0d250379cc754be9    #生成的clientSecret
+  repo: Charlestar.github.io    #仓库名称
+  owner: Charlestar    #github用户名
+  admin: Charlestar
   distractionFreeMode: true #是否启用类似FB的阴影遮罩
 
 
@@ -79,7 +79,7 @@ gitalk:
 
 # Featured Tags
 featured-tags: true                     # 是否使用首页标签
-featured-condition-size: 1              # 相同标签数量大于这个数，才会出现在首页
+featured-condition-size: 0              # 相同标签数量大于这个数，才会出现在首页
 
 # Progressive Web Apps
 chrome-tab-theme-color: "#000000"
