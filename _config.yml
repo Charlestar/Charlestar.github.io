@@ -1,10 +1,10 @@
 # Site settings
 title: ZZC's Blog                   # 博客标题
 SEOTitle: 子辰的博客 | ZZC's Blog    # 显示在浏览器上搜索的时候显示的标题
-header-img: img/post-bg-desk.jpg    # 显示在首页的背景图片
+header-img: img/home-bg.jpg    # 显示在首页的背景图片
 email: charlestarzhang@gmail.com
 description: "Every failure is leading towards success."    # 网站介绍
-keyword: "ZZC, ZZC's Blog, 子辰的博客, zhangzichen, 张子辰, iOS, Apple, iPhone"
+keyword: "ZZC, ZZC's Blog, 子辰的博客"
 url: "http://Charlestar.github.io"          # your host, for absolute URL
 baseurl: ""      # for example, '/blog' if your blog hosted on 'host/blog'
 github_repo: "https://github.com/Charlestar/Charlestar.github.io.git" # you code repository
