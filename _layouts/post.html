@@ -227,30 +227,52 @@ layout: default
 </style>
 {% endif %}
 
-<!-- MathJax Configuration -->
-<script type="text/javascript">
+<!-- MathJax Configuration (v3.2+) -->
+<script>
     MathJax = {
         tex: {
             inlineMath: [['$', '$'], ['\\(', '\\)']],
             displayMath: [['$$', '$$'], ['\\[', '\\]']],
             processEscapes: true,
             processEnvironments: true,
-            packages: {'[+]': ['ams', 'noerrors']},
+            processRefs: true,
+            packages: {'[+]': ['ams', 'noerrors', 'mathtools']},
             macros: {
-                symbf: ['\\boldsymbol', 1],  // 定义\symbf 命令为\boldsymbol
-                eqref: ['\\ref', 1]  // 支持\eqref 命令
-            }
+                symbf: ['\\boldsymbol', 1],  // 粗体向量/矩阵
+                eqref: ['\\ref', 1],  // 公式引用
+                RR: '\\mathbb{R}',  // 实数集
+                NN: '\\mathbb{N}'   // 自然数集
+            },
+            tagSide: 'right',
+            tagIndent: '0.8em'
         },
         options: {
-            skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+            skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            ignoreHtmlClass: 'tex2jax_ignore',
             renderActions: {
-                addMenu: []
-            }
+                addMenu: [],
+                checkDocument: [1001, function(doc) {
+                    doc.menuFilter = function(menu) {
+                        return menu;
+                    };
+                }, '']
+            },
+            zoom: 'Click'  // 点击公式放大
         },
         chtml: {
-            scale: 1.1,
-            displayIndent: '2em'
+            scale: 1.05,
+            displayAlign: 'center',
+            displayIndent: '0em',
+            fontFamily: 'MJXZERO, MJXTEX, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+            fontURL: 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/output/chtml/fonts/woff-v2'
+        },
+        svg: {
+            scale: 1.05,
+            fontCache: 'global'
+        },
+        loader: {
+            load: ['ui/menu', 'ui/safe', 'input/tex', 'output/chtml']
         }
     };
 </script>
-<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" id="MathJax-script" type="text/javascript"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-chtml.js"></script>
