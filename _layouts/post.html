@@ -227,4 +227,30 @@ layout: default
 </style>
 {% endif %}
 
-<script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+<!-- MathJax Configuration -->
+<script type="text/javascript">
+    MathJax = {
+        tex: {
+            inlineMath: [['$', '$'], ['\\(', '\\)']],
+            displayMath: [['$$', '$$'], ['\\[', '\\]']],
+            processEscapes: true,
+            processEnvironments: true,
+            packages: {'[+]': ['ams', 'noerrors']},
+            macros: {
+                symbf: ['\\boldsymbol', 1],  // 定义\symbf 命令为\boldsymbol
+                eqref: ['\\ref', 1]  // 支持\eqref 命令
+            }
+        },
+        options: {
+            skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+            renderActions: {
+                addMenu: []
+            }
+        },
+        chtml: {
+            scale: 1.1,
+            displayIndent: '2em'
+        }
+    };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" id="MathJax-script" type="text/javascript"></script>
