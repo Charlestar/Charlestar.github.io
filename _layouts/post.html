@@ -236,42 +236,36 @@ layout: default
             processEscapes: true,
             processEnvironments: true,
             processRefs: true,
-            packages: {'[+]': ['ams', 'noerrors', 'mathtools']},
+            packages: {'[+]': ['ams', 'noerrors', 'mathtools', 'autoload']},
             macros: {
-                symbf: ['\\boldsymbol', 1],  // 粗体向量/矩阵
-                eqref: ['\\ref', 1],  // 公式引用
-                RR: '\\mathbb{R}',  // 实数集
-                NN: '\\mathbb{N}'   // 自然数集
+                symbf: ['\\boldsymbol', 1],
+                RR: '\\mathbb{R}',
+                NN: '\\mathbb{N}'
             },
             tagSide: 'right',
-            tagIndent: '0.8em'
+            tagIndent: '0.8em',
+            equationNumbers: {
+                autoNumber: 'none',
+                useLabelIds: true
+            }
         },
         options: {
             skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
             ignoreHtmlClass: 'tex2jax_ignore',
             renderActions: {
-                addMenu: [],
-                checkDocument: [1001, function(doc) {
-                    doc.menuFilter = function(menu) {
-                        return menu;
-                    };
-                }, '']
+                addMenu: []
             },
-            zoom: 'Click'  // 点击公式放大
+            zoom: 'Click'
         },
         chtml: {
             scale: 1.05,
             displayAlign: 'center',
             displayIndent: '0em',
-            fontFamily: 'MJXZERO, MJXTEX, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
             fontURL: 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/output/chtml/fonts/woff-v2'
         },
         svg: {
             scale: 1.05,
             fontCache: 'global'
-        },
-        loader: {
-            load: ['ui/menu', 'ui/safe', 'input/tex', 'output/chtml']
         }
     };
 </script>
