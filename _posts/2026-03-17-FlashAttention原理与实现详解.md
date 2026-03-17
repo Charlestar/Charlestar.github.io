@@ -4,7 +4,7 @@ title: FlashAttention 原理与实现详解
 subtitle: IO 感知的快速注意力机制
 date: 2026-03-17
 author: iStar
-header-img: img/post-bg-universe.jpg
+header-img: img/post-bg-flashattention.png
 catalog: true
 mathjax: true
 tags:

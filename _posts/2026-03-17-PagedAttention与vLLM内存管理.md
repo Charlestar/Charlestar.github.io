@@ -4,7 +4,7 @@ title: PagedAttention 与 vLLM 内存管理
 subtitle: 大语言模型推理系统的内存革命
 date: 2026-03-17
 author: iStar
-header-img: img/post-bg-debug.png
+header-img: img/post-bg-pagedattention.png
 catalog: true
 mathjax: true
 tags:
