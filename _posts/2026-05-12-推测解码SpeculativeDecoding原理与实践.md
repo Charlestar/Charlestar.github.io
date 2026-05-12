@@ -4,7 +4,7 @@ title: 推测解码（Speculative Decoding）原理与实战
 subtitle: 从理论证明到 EAGLE-3、SSD，让 LLM 推理速度翻倍的系统指南
 date: 2026-05-12
 author: iStar
-header-img: img/post-bg-speculative-decoding.jpg
+header-img: img/post-bg-speculative-decoding.png
 catalog: true
 mathjax: true
 tags:
