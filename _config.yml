@@ -5,7 +5,7 @@ header-img: img/home-bg.jpg    # 显示在首页的背景图片
 email: charlestarzhang@gmail.com
 description: "Every failure is leading towards success."    # 网站介绍
 keyword: "ZZC, ZZC's Blog, 子辰的博客"
-url: "http://Charlestar.github.io"          # your host, for absolute URL
+url: "https://Charlestar.github.io"         # your host, for absolute URL
 baseurl: ""      # for example, '/blog' if your blog hosted on 'host/blog'
 github_repo: "https://github.com/Charlestar/Charlestar.github.io.git" # you code repository
 
@@ -30,7 +30,7 @@ jianshu_username:   9833a6ffe865
 # from 2016, 'pygments' is unsupported on GitHub Pages. Use 'rouge' for highlighting instead.
 permalink: pretty
 paginate: 10
-exclude: ["less","node_modules","Gruntfile.js","package.json","README.md"]
+exclude: ["less","node_modules","Gruntfile.js","package.json","README.md",".travis.yml","LICENSE"]
 anchorjs: true                          # if you want to customize anchor. check out line:181 of `post.html`
 
 
@@ -54,15 +54,23 @@ kramdown:
 # disqus_username: iStar
 
 
-# Gitalk
-gitalk:
-  enable: true    #是否开启Gitalk评论
-  clientID: 584fb2dd21f3b7b68132                            #生成的clientID
-  clientSecret: 4c6d4eaa403c37a15b7433db0d250379cc754be9    #生成的clientSecret
-  repo: Charlestar.github.io    #仓库名称
-  owner: Charlestar    #github用户名
-  admin: Charlestar
-  distractionFreeMode: true #是否启用类似FB的阴影遮罩
+# Giscus（基于 GitHub Discussions，无需暴露密钥）
+# 使用前需在 GitHub 仓库 Settings → Discussions 中启用，
+# 然后到 https://giscus.app/zh-CN 获取 repo-id 和 category-id
+giscus:
+  enable: true
+  repo: "Charlestar/Charlestar.github.io"
+  repo-id: "REPLACE_WITH_YOUR_REPO_ID"          # 在 https://giscus.app 获取
+  category: "Announcements"
+  category-id: "REPLACE_WITH_YOUR_CATEGORY_ID"  # 在 https://giscus.app 获取
+  mapping: "pathname"
+  strict: "0"
+  reactions-enabled: "1"
+  emit-metadata: "0"
+  input-position: "bottom"
+  theme: "light"
+  lang: "zh-CN"
+  loading: "lazy"
 
 
 # # 统计
