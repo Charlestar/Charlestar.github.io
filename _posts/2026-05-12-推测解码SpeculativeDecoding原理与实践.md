@@ -292,7 +292,7 @@ EAGLE 系列的一个瓶颈是草稿生成本身是自回归的。P-EAGLE（Para
 - 低并发时吞吐量提升 55-69%
 - 高并发时仍保持 5-25% 提升
 
-### 4.6 Speculative Speculative Decoding（SSD/Saguaro）：2026 年的新突破
+### 4.6 推测的推测解码（SSD/Saguaro）：2026 年的新突破
 
 这是 2026 年初提出的最新范式，核心思想是**连"草稿-验证"这个串行流水线也要并行化**。
 
@@ -421,10 +421,8 @@ response = client.chat.completions.create(
     ],
     max_tokens=500,
     temperature=0.7,
-    # 额外参数可以控制推测解码的行为
-    extra_body={
-        "speculative_decoding": True,
-    }
+    # 注意：推测解码需在服务端启动时配置
+    # 客户端无需额外参数
 )
 
 print(response.choices[0].message.content)
@@ -529,3 +527,9 @@ print(f"平均草稿长度: {draft_tokens:.1f}")
 6. Google Research, "Supercharging LLM Inference on TPUs with Diffusion-Style Speculative Decoding", 2026
 7. NVIDIA Developer Blog, "An Introduction to Speculative Decoding", 2025
 8. AWS ML Blog, "P-EAGLE: Faster LLM Inference with Parallel Speculative Decoding in vLLM", 2026
+
+**相关文章**：
+- [SGLang 与 RadixAttention 详解](/2026/05/12/SGLang与RadixAttention详解/)
+- [MoE 推理优化全景指南](/2026/05/13/MoE推理优化全景指南/)
+- [FlashInfer 深度解析](/2026/05/13/flashinfer-deep-dive/)
+- [2026 大模型推理引擎全景对比](/2026/05/11/2026大模型推理引擎全景对比/)

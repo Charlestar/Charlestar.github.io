@@ -520,12 +520,16 @@ __global__ void blackwell_sparse_attention_kernel(
 
 ```bash
 # 安装 FlashInfer（需要 CUDA 11.8+）
-pip install flashinfer -i https://flashinfer.ai/whl/cu118
+# 推荐安装方式：
+pip install flashinfer-python -i https://flashinfer.ai/whl/cu124/torch2.4/
 
 # 或者从源码编译（支持更多自定义选项）
 git clone https://github.com/flashinfer-ai/flashinfer.git
 cd flashinfer
 python setup.py install
+
+# 注意：具体安装命令可能随版本更新而变化，请参考官方文档：
+# https://docs.flashinfer.ai/installation.html
 ```
 
 ### 7.2 性能调优参数
@@ -749,3 +753,9 @@ FlashInfer 代表了 LLM 推理优化领域的一个重要里程碑。通过 JIT
 ---
 
 *本文基于截至 2026 年 5 月的公开信息和技术资料撰写，部分代码示例为概念演示，实际使用时请参考官方文档。*
+
+**相关文章**：
+- [SGLang 与 RadixAttention 详解](/2026/05/12/SGLang与RadixAttention详解/)
+- [推测解码原理与实战](/2026/05/12/推测解码SpeculativeDecoding原理与实践/)
+- [MoE 推理优化全景指南](/2026/05/13/MoE推理优化全景指南/)
+- [2026 大模型推理引擎全景对比](/2026/05/11/2026大模型推理引擎全景对比/)
