@@ -2,7 +2,7 @@
 layout: post
 title: "推理模型推测解码完全指南：Thinking Budget 机制与 EAGLE-3 实战"
 date: 2026-05-15 12:00:00 +0800
-header-img: img/post-bg-ai-infra.jpg
+header-img: /img/post-bg-ai-infra.jpg
 author: iStar
 catalog: true
 mathjax: true

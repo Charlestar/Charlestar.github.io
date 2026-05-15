@@ -51,7 +51,7 @@ title: # 标题
 subtitle: # 副标题
 tags:
   - 生活随笔
-header-img: img/
+header-img: /img/
 ```
 
 **修复后**：
@@ -63,7 +63,7 @@ tags:
     - 推荐算法
     - 机器学习
     - 深度学习
-header-img: img/post-bg-miui-ux.jpg
+header-img: /img/post-bg-miui-ux.jpg
 ```
 
 ### 2. LangGraph+MCP 代码修复

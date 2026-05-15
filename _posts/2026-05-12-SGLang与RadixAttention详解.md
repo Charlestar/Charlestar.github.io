@@ -2,7 +2,7 @@
 layout: post
 title: SGLang 与 RadixAttention 详解——大模型推理服务的 KV Cache 复用革命
 date: 2026-05-12 15:00:00 +0800
-header-img: img/post-bg-ai-infra.jpg
+header-img: /img/post-bg-ai-infra.jpg
 author: iStar
 tags:
   - AI Infra
