@@ -62,9 +62,9 @@ kramdown:
 giscus:
   enable: true
   repo: "Charlestar/Charlestar.github.io"
-  repo-id: "REPLACE_WITH_YOUR_REPO_ID"          # TODO: 到 https://giscus.app 获取真实 repo-id
+  repo-id: "MDEwOlJlcG9zaXRvcnkyMzg0NzE4OTU="
   category: "Announcements"
-  category-id: "REPLACE_WITH_YOUR_CATEGORY_ID"  # TODO: 到 https://giscus.app 获取真实 category-id
+  category-id: "DIC_kwDODjbK184C9GBS"
   mapping: "pathname"
   strict: "0"
   reactions-enabled: "1"
