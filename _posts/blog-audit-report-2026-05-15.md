@@ -49,7 +49,7 @@
 ```yaml
 title: # 标题
 subtitle: # 副标题
-tags: 生活
+tags: [生活随笔]
 header-img: img/
 ```
 
@@ -57,7 +57,7 @@ header-img: img/
 ```yaml
 title: 推荐算法排序模型
 subtitle: 多目标建模、粗排优化与特征处理实践
-tags:
+tags: [生活随笔]
     - 推荐算法
     - 机器学习
     - 深度学习

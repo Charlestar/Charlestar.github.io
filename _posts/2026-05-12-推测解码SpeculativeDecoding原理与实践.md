@@ -7,7 +7,7 @@ author: iStar
 header-img: img/post-bg-speculative-decoding.png
 catalog: true
 mathjax: true
-tags:
+tags: [AI Infra, 推测解码, LLM推理]
     - 大语言模型
     - 推理优化
     - 推测解码

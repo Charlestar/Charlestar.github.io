@@ -70,10 +70,8 @@
 </script>
 {% endif %}
 
-<!-- Lunr.js for search (only load on pages with search) -->
-{% if page.layout == 'page' or page.url == '/' %}
+<!-- Lunr.js for search (loaded on all pages since search bar may appear) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lunr.js/2.3.9/lunr.min.js"></script>
-{% endif %}
 
 <!-- Blog Optimizations: Dark Mode, Copy Button, Progress Bar, etc. -->
 <script src="{{ "/js/blog-optimizations.js" | prepend: site.baseurl }}"></script>

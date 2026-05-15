@@ -7,7 +7,7 @@ author: iStar
 header-img: img/post-bg-pagedattention.jpg
 catalog: true
 mathjax: true
-tags:
+tags: [AI Infra, LLM推理, KV Cache]
     - 深度学习
     - 大语言模型
     - 推理优化
