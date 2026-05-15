@@ -7,11 +7,10 @@ author: iStar
 header-img: img/post-bg-flashattention.jpg
 catalog: true
 mathjax: true
-tags: [AI Infra, LLM推理, 注意力机制]
-    - 深度学习
-    - Transformer
-    - 注意力机制
-    - 性能优化
+tags:
+  - AI Infra
+  - LLM推理
+  - 注意力机制
 ---
 
 > **摘要**：FlashAttention 是由 Tri Dao 等人提出的快速且内存高效的精确注意力算法。它通过 IO 感知的设计，显著减少了 GPU 高带宽内存（HBM）与片上 SRAM 之间的数据读写次数，实现了比传统注意力机制更快的训练和推理速度。本文详细解析 FlashAttention 的核心原理、算法实现及后续演进。

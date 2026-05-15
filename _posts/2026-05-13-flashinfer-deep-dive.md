@@ -6,12 +6,12 @@ mathjax: true
 title: FlashInfer 深度解析：从 JIT 编译到 AI 生成 Kernel 的 LLM 推理加速革命
 date: 2026-05-13
 header-img: img/post-bg-ai-infra.jpg
-tags: [AI Infra, FlashInfer, GPU优化]
-- AI Infra
-- LLM Inference
-- CUDA
-- FlashInfer
-- Kernel Optimization
+tags:
+  - AI Infra
+  - FlashInfer
+  - GPU优化
+  - CUDA
+  - LLM推理
 ---
 
 # FlashInfer 深度解析：从 JIT 编译到 AI 生成 Kernel 的 LLM 推理加速革命

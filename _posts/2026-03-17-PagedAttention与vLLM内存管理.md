@@ -7,11 +7,10 @@ author: iStar
 header-img: img/post-bg-pagedattention.jpg
 catalog: true
 mathjax: true
-tags: [AI Infra, LLM推理, KV Cache]
-    - 深度学习
-    - 大语言模型
-    - 推理优化
-    - 内存管理
+tags:
+  - AI Infra
+  - LLM推理
+  - KV Cache
 ---
 
 > **摘要**：PagedAttention 是 vLLM 推理系统的核心技术，灵感来自操作系统的虚拟内存分页机制。它将连续的 KV 缓存分割成固定大小的非连续块，实现了近零浪费的内存利用率和 2-4 倍的吞吐量提升。本文深入解析 PagedAttention 的设计原理、实现细节及实际应用效果。

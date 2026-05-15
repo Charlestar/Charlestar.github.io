@@ -7,11 +7,11 @@ author: iStar
 header-img: img/post-bg-speculative-decoding.png
 catalog: true
 mathjax: true
-tags: [AI Infra, 推测解码, LLM推理]
-    - 大语言模型
-    - 推理优化
-    - 推测解码
-    - AI Infra
+tags:
+  - AI Infra
+  - 推测解码
+  - LLM推理
+  - 推理优化
 ---
 
 > **摘要**：大语言模型的推理生成是一个典型的 **memory-bound** 过程——每次生成一个 token 都需要把整个模型权重从 HBM 中读取一遍，而计算量相对极少。推测解码（Speculative Decoding）通过"小模型先猜、大模型一次验证多个"的策略，在保证输出分布完全一致的前提下，将推理速度提升 2-6 倍。本文将从数学原理、技术演进、性能对比到实战代码，全面剖析这一 2025-2026 年最重要的推理优化技术。

@@ -4,11 +4,12 @@ title: SGLang 与 RadixAttention 详解——大模型推理服务的 KV Cache �
 date: 2026-05-12 15:00:00 +0800
 header-img: img/post-bg-ai-infra.jpg
 author: iStar
-tags: [AI Infra, SGLang, RadixAttention]
+tags:
   - AI Infra
-  - LLM Serving
   - SGLang
+  - RadixAttention
   - KV Cache
+  - LLM Serving
 catalog: true
 mathjax: true
 ---
