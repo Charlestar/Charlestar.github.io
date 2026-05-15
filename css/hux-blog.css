@@ -59,8 +59,8 @@
 .side-catalog.fixed {
   position: fixed;
   top: -21px;
-  max-height: calc(100vh - 100px);
-  overflow-y: auto;
+  max-height: none;
+  overflow-y: visible;
 }
 .side-catalog.fold .catalog-toggle::before {
   content: "+";
