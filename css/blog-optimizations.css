@@ -83,6 +83,18 @@
   --mobile-catalog-bg: #1e1e3a;
 }
 
+/* ── Remove Independent Scrollbars (Fix three-scrollbar issue) ── */
+article,
+article .container,
+article .row,
+article .post-container,
+article .sidebar-container,
+article .catalog-container {
+  overflow: visible !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
 /* ── Apply Variables to Body ── */
 body {
   background-color: var(--bg-primary);
