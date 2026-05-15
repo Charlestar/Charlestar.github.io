@@ -2,10 +2,6 @@
 layout: default
 ---
 
-<!-- Image to hack wechat -->
-<!-- <img src="/img/icon_wechat.png" width="0" height="0"> -->
-<!-- <img src="{{ site.baseurl }}/{% if page.header-img %}{{ page.header-img }}{% else %}{{ site.header-img }}{% endif %}" width="0" height="0"> -->
-
 <!-- Post Header -->
 <style type="text/css">
     header.intro-header{
@@ -34,13 +30,14 @@ layout: default
                         {% endfor %}
                     </div>
                     <h1>{{ page.title }}</h1>
-                    {% comment %}
-                        always create a h2 for keeping the margin , Hux
-                    {% endcomment %}
-                    {% comment %} if page.subtitle {% endcomment %}
+                    {% if page.subtitle %}
                     <h2 class="subheading">{{ page.subtitle }}</h2>
-                    {% comment %} endif {% endcomment %}
-                    <span class="meta">Posted by {% if page.author %}{{ page.author }}{% else %}{{ site.title }}{% endif %} on {{ page.date | date: "%B %-d, %Y" }}</span>
+                    {% endif %}
+                    <span class="meta">
+                        {% if page.header-img %}📸 {% endif %}
+                        Posted by {% if page.author %}{{ page.author }}{% else %}{{ site.title }}{% endif %}
+                        on {{ page.date | date: "%B %-d, %Y" }}
+                    </span>
                 </div>
             </div>
         </div>
@@ -58,10 +55,35 @@ layout: default
                 col-md-10 col-md-offset-1
                 post-container">
 
-				{{ content }}
+                <!-- Mobile Catalog (shown below header on mobile/tablet) -->
+                {% if page.catalog %}
+                <div class="mobile-catalog">
+                    <button class="mobile-catalog-toggle">📑 Table of Contents</button>
+                    <div class="mobile-catalog-body"></div>
+                </div>
+                {% endif %}
+
+                {{ content }}
 
                 <hr style="visibility: hidden;">
 
+                <!-- Social Sharing -->
+                <div class="share-container">
+                    <h5>Share this article</h5>
+                    {% assign share_url = page.url | prepend: site.baseurl | prepend: site.url | url_encode %}
+                    {% assign share_title = page.title | url_encode %}
+                    <a class="share-btn twitter" href="https://twitter.com/intent/tweet?url={{ share_url }}&text={{ share_title }}" target="_blank" rel="noopener" title="Share on X/Twitter" aria-label="Share on Twitter">
+                        <i class="fa-brands fa-x-twitter"></i>
+                    </a>
+                    <a class="share-btn wechat" href="javascript:void(0)" onclick="alert('Copy the link to share on WeChat')" title="Share on WeChat" aria-label="Share on WeChat">
+                        <i class="fa-brands fa-weixin"></i>
+                    </a>
+                    <a class="share-btn github" href="https://github.com/{{ site.github_username }}/{{ site.github_username }}.github.io/issues/new?title=Feedback: {{ share_title }}&body=Article: {{ share_url }}" target="_blank" rel="noopener" title="Feedback on GitHub" aria-label="Feedback on GitHub">
+                        <i class="fa-brands fa-github"></i>
+                    </a>
+                </div>
+
+                <!-- Pager -->
                 <ul class="pager">
                     {% if page.previous.url %}
                     <li class="previous">
@@ -81,6 +103,14 @@ layout: default
                     {% endif %}
                 </ul>
 
+                <!-- Related Posts -->
+                {% if page.tags and page.tags.size > 0 %}
+                <div id="related-posts"
+                     data-tags="{{ page.tags | jsonify }}"
+                     data-current-url="{{ page.url }}">
+                    <!-- Posts data injected via footer script -->
+                </div>
+                {% endif %}
 
                 <!-- Giscus 评论系统（基于 GitHub Discussions，无密钥泄露） -->
                 {% if site.giscus.enable %}
@@ -95,7 +125,7 @@ layout: default
                     data-reactions-enabled="{{site.giscus.reactions-enabled}}"
                     data-emit-metadata="{{site.giscus.emit-metadata}}"
                     data-input-position="{{site.giscus.input-position}}"
-                    data-theme="{{site.giscus.theme}}"
+                    data-theme="preferred_color_scheme"
                     data-lang="{{site.giscus.lang}}"
                     data-loading="{{site.giscus.loading}}"
                     crossorigin="anonymous"
@@ -187,7 +217,6 @@ layout: default
 <!-- disqus 公共JS代码 end -->
 {% endif %}
 
-
 {% if site.anchorjs %}
 <!-- async load function -->
 <script>
@@ -203,14 +232,8 @@ layout: default
 <!-- anchor-js, Doc:http://bryanbraun.github.io/anchorjs/ -->
 <script>
     async("//cdnjs.cloudflare.com/ajax/libs/anchor-js/5.0.0/anchor.min.js",function(){
-        // BY Fix:去除标题前的‘#’ issues:<https://github.com/qiubaiying/qiubaiying.github.io/issues/137>
-        // anchors.options = {
-        //   visible: 'always',
-        //   placement: 'right',
-        //   icon: '#'
-        // };
         anchors.add().remove('.intro-header h1').remove('.subheading').remove('.sidebar-container h5');
-    })
+    });
 </script>
 <style>
     /* place left on bigger screen */
