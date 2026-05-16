@@ -253,6 +253,17 @@ a:hover {
 }
 
 /* ── Dark Mode Toggle ── */
+/* Ensure the nav item container is vertically centered */
+.navbar-nav > li {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+.navbar-nav > li > a,
+.navbar-nav > li > button {
+  display: flex;
+  align-items: center;
+}
 .theme-toggle {
   display: inline-flex;
   align-items: center;
@@ -267,6 +278,7 @@ a:hover {
   font-size: 18px;
   transition: all 0.2s ease;
   margin-left: 8px;
+  vertical-align: middle;
 }
 .theme-toggle:hover {
   background: var(--copy-btn-bg);
