@@ -342,17 +342,7 @@ a:hover {
 }
 
 /* ── Dark Mode Toggle ── */
-/* Ensure the nav item container is vertically centered */
-.navbar-nav > li {
-  display: flex;
-  align-items: center;
-  height: 100%;
-}
-.navbar-nav > li > a,
-.navbar-nav > li > button {
-  display: flex;
-  align-items: center;
-}
+/* Only target the toggle button itself, preserve navbar layout */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
@@ -372,6 +362,10 @@ a:hover {
 .theme-toggle:hover {
   background: var(--copy-btn-bg);
   color: var(--accent-color);
+}
+/* Fix theme-toggle li to behave like other nav items */
+.navbar-nav > li:last-child {
+  line-height: 20px;
 }
 
 /* ── Sidebar ── */

@@ -71,6 +71,8 @@
     document.addEventListener('click', function(e){
         if(e.target == $toggle) return;
         if(e.target.className == 'icon-bar') return;
+        // Don't close when clicking theme toggle
+        if(e.target.closest('.theme-toggle')) return;
         __HuxNav__.close();
     })
 </script>
