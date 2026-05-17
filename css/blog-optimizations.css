@@ -342,7 +342,26 @@ a:hover {
 }
 
 /* ── Dark Mode Toggle ── */
-/* Only target the toggle button itself, preserve navbar layout */
+/* Mobile: prevent brand wrapping */
+@media only screen and (max-width: 767px) {
+  .navbar-brand {
+    white-space: nowrap !important;
+    font-size: 15px !important;
+    max-width: 70vw !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+/* Desktop: brand vertical centering */
+@media only screen and (min-width: 768px) {
+  .navbar-custom .navbar-brand {
+    height: 56px !important;
+    line-height: 56px !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+}
+/* Theme toggle button - minimal fix */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
@@ -358,14 +377,17 @@ a:hover {
   transition: all 0.2s ease;
   margin-left: 8px;
   vertical-align: middle;
+  line-height: 1;
+  padding: 0;
 }
 .theme-toggle:hover {
   background: var(--copy-btn-bg);
   color: var(--accent-color);
 }
-/* Fix theme-toggle li to behave like other nav items */
+/* Theme toggle inside nav - vertical center */
 .navbar-nav > li:last-child {
-  line-height: 20px;
+  display: flex;
+  align-items: center;
 }
 
 /* ── Sidebar ── */
