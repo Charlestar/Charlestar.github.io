@@ -214,6 +214,7 @@ a:hover {
 }
 .navbar-default .navbar-brand {
   color: var(--text-primary) !important;
+  white-space: nowrap !important;
 }
 .navbar-default .nav li > a {
   color: var(--text-secondary) !important;
@@ -346,10 +347,15 @@ a:hover {
 @media only screen and (max-width: 767px) {
   .navbar-brand {
     white-space: nowrap !important;
-    font-size: 15px !important;
-    max-width: 70vw !important;
+    font-size: 14px !important;
+    max-width: 65vw !important;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: inline-block !important;
+    float: left !important;
+  }
+  .navbar-toggle {
+    float: right !important;
   }
 }
 /* Desktop: brand vertical centering */
