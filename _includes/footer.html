@@ -70,15 +70,17 @@
 </script>
 {% endif %}
 
-<!-- Lunr.js for search (loaded on all pages since search bar may appear) -->
+<!-- Lunr.js for search (only on index page) -->
+{% if page.url == "/" or paginator %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lunr.js/2.3.9/lunr.min.js"></script>
+{% endif %}
 
 <!-- Blog Optimizations: Dark Mode, Copy Button, Progress Bar, etc. -->
 <script src="{{ "/js/blog-optimizations.js" | prepend: site.baseurl }}"></script>
 
-<!-- async load function -->
+<!-- script loader utility -->
 <script>
-    function async(u, c) {
+    function loadScript(u, c) {
       var d = document, t = 'script',
           o = d.createElement(t),
           s = d.getElementsByTagName(t)[0];
@@ -91,7 +93,7 @@
 <!-- jquery.tagcloud.js -->
 <script>
     if($('#tag_cloud').length !== 0){
-        async('{{ "/js/jquery.tagcloud.js" | prepend: site.baseurl }}',function(){
+        loadScript('{{ "/js/jquery.tagcloud.js" | prepend: site.baseurl }}',function(){
             $.fn.tagcloud.defaults = {
                 color: {start: '#bbbbee', end: '#0085a1'},
             };
@@ -104,14 +106,12 @@
 {% if page.layout == 'post' %}
 <script id="all-posts-data" type="application/json">
 [
-    {% for p in site.posts %}
-    {
+    {% assign first = true %}{% for p in site.posts %}{% if p.url != page.url %}{% unless first %},{% endunless %}{
         "title": {{ p.title | jsonify }},
         "url": "{{ p.url | prepend: site.baseurl }}",
         "date": "{{ p.date | date: "%Y-%m-%d" }}",
         "tags": {{ p.tags | jsonify }}
-    }{% if forloop.last == false %},{% endif %}
-    {% endfor %}
+    }{% assign first = false %}{% endif %}{% endfor %}
 ]
 </script>
 <script>
@@ -186,7 +186,7 @@
      * Doc: https://github.com/davist11/jQuery-One-Page-Nav
      * Fork by Hux to support padding
      */
-    async("{{ '/js/jquery.nav.js' | prepend: site.baseurl }}", function () {
+    loadScript("{{ '/js/jquery.nav.js' | prepend: site.baseurl }}", function () {
         $('.catalog-body').onePageNav({
             currentClass: "active",
             changeHash: !1,

@@ -34,6 +34,9 @@ Temporary Items
 # debug file
 _site
 
+# Node.js
+node_modules/
+
 # Build artifacts
 .jekyll-metadata
 vendor/

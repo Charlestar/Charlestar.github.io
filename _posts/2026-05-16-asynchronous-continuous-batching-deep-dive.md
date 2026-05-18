@@ -3,8 +3,10 @@ layout: post
 title: "异步连续批处理深度解析：从 CUDA Stream 到双缓冲机制"
 date: 2026-05-16 12:00:00 +0800
 author: iStar
+header-img: /img/post-bg-ai-infra.jpg
 catalog: true
 mathjax: true
+tags: [AI Infra, LLM推理, CUDA, 推理优化]
 ---
 
 ![异步连续批处理架构图](/assets/images/2026-05-16-header.png)

@@ -3,8 +3,10 @@ layout: post
 title: "DeepSeek V3.2 稀疏注意力深度解析：从O(n²)到O(n)的长上下文革命"
 date: 2026-05-18 12:00:00 +0800
 author: iStar
+header-img: /img/post-bg-ai-infra.jpg
 catalog: true
 mathjax: true
+tags: [AI Infra, LLM推理, 注意力机制]
 ---
 
 # DeepSeek V3.2 稀疏注意力深度解析：从O(n²)到O(n)的长上下文革命

@@ -3,8 +3,10 @@ layout: post
 title: "FairBatching深度解析：解决LLM推理中的预填充饥饿问题"
 date: 2026-05-17 12:00:00 +0800
 author: iStar
+header-img: /img/post-bg-ai-infra.jpg
 catalog: true
 mathjax: true
+tags: [AI Infra, LLM推理, 推理优化]
 ---
 
 ![FairBatching调度策略对比图](/assets/images/2026-05-17-header.png)
