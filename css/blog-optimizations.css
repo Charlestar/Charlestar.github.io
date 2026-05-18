@@ -399,6 +399,9 @@ a:hover {
 /* ── Sidebar ── */
 .sidebar-container {
   color: var(--text-secondary);
+  position: relative;
+  z-index: 1;
+  clear: both;
 }
 .sidebar-container h5,
 .sidebar-container h5 a {
@@ -418,6 +421,19 @@ a:hover {
 .sidebar-container .tags a:hover {
   border-color: var(--accent-color);
   color: var(--accent-color) !important;
+}
+/* Ensure Giscus comments are above sidebar */
+#giscus-container,
+.giscus {
+  position: relative;
+  z-index: 10;
+  margin-bottom: 40px;
+}
+/* Clear floats before sidebar */
+.post-container::after {
+  content: "";
+  display: block;
+  clear: both;
 }
 
 /* ── Tags ── */
@@ -479,6 +495,13 @@ footer .copyright a {
   padding: 12px;
   overflow: visible !important;
   height: auto !important;
+  z-index: 5;
+}
+/* Fixed catalog should not cover comments */
+.side-catalog.fixed {
+  z-index: 5;
+  max-height: calc(100vh - 200px);
+  bottom: auto;
 }
 .side-catalog .catalog-body {
   max-height: 70vh;
