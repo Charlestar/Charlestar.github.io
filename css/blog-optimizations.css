@@ -175,11 +175,14 @@ table {
 /* ── Remove Independent Scrollbars (Fix three-scrollbar issue) ── */
 article,
 article .container,
-article .row,
 article .post-container {
   overflow: visible !important;
   height: auto !important;
   max-height: none !important;
+}
+/* Ensure row clears after post-container + catalog */
+article .row {
+  overflow: visible;
 }
 
 /* ── Catalog Container: Position to RIGHT side ── */
@@ -188,14 +191,34 @@ article .row {
 }
 .catalog-container {
   position: absolute;
-  right: -210px;
+  right: 0;
   top: 0;
   width: 200px;
   padding: 0;
   z-index: 5;
 }
 
-/* ── Sidebar Container: Below post content, properly spaced ── */
+/* ── Sidebar Container: Full width below post content ── */
+.sidebar-container-full {
+  clear: both;
+  width: 100%;
+  max-width: 700px;
+  margin: 60px auto 30px;
+  padding: 0 15px;
+}
+.sidebar-container-full h5 {
+  color: var(--text-muted) !important;
+  padding-bottom: 1em;
+  margin-bottom: 15px;
+}
+.sidebar-container-full h5 a {
+  color: var(--text-muted) !important;
+  text-decoration: none;
+}
+.sidebar-container-full hr {
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
 .sidebar-container {
   position: relative;
   margin-top: 40px;
