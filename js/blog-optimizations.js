@@ -264,10 +264,12 @@
         return;
       }
 
-      var results;
+      var results = [];
+      // Try Lunr first, fall back to substring match
       if (idx) {
-        try { results = idx.search(query); } catch(e) { results = fallbackSearch(query); }
-      } else {
+        try { results = idx.search(query); } catch(e) {}
+      }
+      if (results.length === 0) {
         results = fallbackSearch(query);
       }
 
