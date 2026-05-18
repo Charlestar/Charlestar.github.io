@@ -176,12 +176,29 @@ table {
 article,
 article .container,
 article .row,
-article .post-container,
-article .sidebar-container,
-article .catalog-container {
+article .post-container {
   overflow: visible !important;
   height: auto !important;
   max-height: none !important;
+}
+
+/* ── Catalog Container: Position to RIGHT side ── */
+.catalog-container {
+  position: absolute;
+  right: 0;
+  left: auto;
+  top: 0;
+  width: 200px;
+  padding: 0;
+  z-index: 5;
+}
+
+/* ── Sidebar Container: Below post content ── */
+.sidebar-container {
+  position: relative;
+  z-index: 1;
+  margin-top: 40px;
+  clear: both;
 }
 
 /* ── Apply Variables to Body ── */
@@ -496,12 +513,17 @@ footer .copyright a {
   overflow: visible !important;
   height: auto !important;
   z-index: 5;
+  position: absolute;
+  right: 30px;
+  width: 195px;
 }
-/* Fixed catalog should not cover comments */
+/* Fixed catalog should not cover comments - position from viewport */
 .side-catalog.fixed {
+  position: fixed;
+  right: 30px;
+  top: 80px;
   z-index: 5;
-  max-height: calc(100vh - 200px);
-  bottom: auto;
+  max-height: calc(100vh - 150px);
 }
 .side-catalog .catalog-body {
   max-height: 70vh;
