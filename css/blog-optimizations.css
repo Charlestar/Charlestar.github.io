@@ -8,15 +8,17 @@
   display: none;
 }
 @media (min-width: 1200px) {
-  .catalog-container.catalog-visible {
+  .catalog-container {
     display: block;
-    position: fixed;
-    top: 70px;
-    right: calc((100vw - 1140px) / 2);
+    position: absolute;
     width: 195px;
     max-height: calc(100vh - 90px);
     overflow-y: auto;
     z-index: 10;
+  }
+  .catalog-container.catalog-fixed {
+    position: fixed;
+    top: 70px;
   }
 }
 .side-catalog.fixed {

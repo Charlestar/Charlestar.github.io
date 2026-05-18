@@ -70,13 +70,20 @@ jQuery(document).ready(function($) {
                 this.previousTop = currentTop;
             });
 
-        // Catalog visibility: show when scrolled past header, keep visible
+        // Catalog: position below header, fix on scroll
         var $catalog = $('.catalog-container');
-        var headerBottom = $('.intro-header').offset().top + $('.intro-header').outerHeight();
-        $(window).on('scroll', function() {
-            if ($(window).scrollTop() > headerBottom - 80) {
-                $catalog.addClass('catalog-visible');
-            }
-        });
+        if ($catalog.length) {
+            var $header = $('.intro-header');
+            var headerH = $header.outerHeight();
+            // Initial position: right side, below header
+            $catalog.css({ top: headerH + 'px', right: 'calc((100vw - 1140px) / 2)' });
+            $(window).on('scroll', function() {
+                if ($(window).scrollTop() > headerH - 70) {
+                    $catalog.addClass('catalog-fixed');
+                } else {
+                    $catalog.removeClass('catalog-fixed');
+                }
+            });
+        }
     }
 });
