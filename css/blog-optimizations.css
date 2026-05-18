@@ -5,9 +5,8 @@
 
 /* ── Side Catalog: sticky positioning ── */
 .catalog-container {
-  position: sticky;
+  position: sticky !important;
   top: 70px;
-  align-self: flex-start;
 }
 .side-catalog.fixed {
   position: static;
@@ -26,9 +25,12 @@ html, body {
 }
 
 /* Fix common overflow culprits */
-img, video, iframe, embed, object {
+img, video, embed, object {
   max-width: 100% !important;
   height: auto !important;
+}
+iframe {
+  max-width: 100% !important;
 }
 
 /* Prevent tables from overflowing */
