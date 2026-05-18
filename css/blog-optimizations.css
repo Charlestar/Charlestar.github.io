@@ -439,9 +439,12 @@ a:hover {
   color: var(--accent-color);
 }
 /* Theme toggle inside nav - vertical center */
-.navbar-nav > li:last-child {
-  display: flex;
-  align-items: center;
+@media only screen and (min-width: 768px) {
+  .navbar-nav > li:last-child {
+    display: flex !important;
+    align-items: center;
+    padding: 12px 15px;
+  }
 }
 
 /* ── Sidebar ── */
