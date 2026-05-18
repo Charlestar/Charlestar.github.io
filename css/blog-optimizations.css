@@ -3,6 +3,16 @@
    Dark Mode, Code Blocks, Reading Progress, Mobile Catalog, etc.
    ============================================================ */
 
+/* ── Side Catalog: sticky positioning ── */
+.catalog-container {
+  position: sticky;
+  top: 70px;
+  align-self: flex-start;
+}
+.side-catalog.fixed {
+  position: static;
+}
+
 /* ── Mobile Horizontal Scroll Fix ── */
 html, body {
   overflow-x: hidden !important;
