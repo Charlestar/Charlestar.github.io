@@ -3,10 +3,30 @@
    Dark Mode, Code Blocks, Reading Progress, Mobile Catalog, etc.
    ============================================================ */
 
-/* ── Side Catalog: sticky positioning ── */
+/* ── Side Catalog: fixed in right margin while scrolling ── */
 .catalog-container {
-  position: sticky !important;
+  display: none;
+}
+.catalog-container.catalog-visible {
+  display: block;
+  position: fixed;
   top: 70px;
+  width: 195px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  z-index: 10;
+}
+/* 1200px+ (col-lg-8 col-lg-offset-2, container 1140px) */
+@media (min-width: 1200px) {
+  .catalog-container.catalog-visible {
+    right: calc((100vw - 1140px) / 2 - 5px);
+  }
+}
+/* 992-1199px (col-lg-8 col-lg-offset-2, container 940px) */
+@media (min-width: 992px) and (max-width: 1199px) {
+  .catalog-container.catalog-visible {
+    right: calc((100vw - 940px) / 2 - 5px);
+  }
 }
 .side-catalog.fixed {
   position: static;

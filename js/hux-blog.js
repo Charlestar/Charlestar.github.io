@@ -48,13 +48,12 @@ jQuery(document).ready(function($) {
     //primary navigation slide-in effect
     if ($(window).width() > MQL) {
         var headerHeight = $('.navbar-custom').height(),
-            bannerHeight  = $('.intro-header .container').height();     
+            bannerHeight  = $('.intro-header .container').height();
         $(window).on('scroll', {
                 previousTop: 0
             },
             function() {
-                var currentTop = $(window).scrollTop(),
-                    $catalog = $('.side-catalog');
+                var currentTop = $(window).scrollTop();
 
                 //check if user is scrolling up by mouse or keyborad
                 if (currentTop < this.previousTop) {
@@ -70,6 +69,13 @@ jQuery(document).ready(function($) {
                     if (currentTop > headerHeight && !$('.navbar-custom').hasClass('is-fixed')) $('.navbar-custom').addClass('is-fixed');
                 }
                 this.previousTop = currentTop;
+
+                //toggle catalog visibility when scrolling past the banner
+                if (currentTop > bannerHeight) {
+                    $('.catalog-container').addClass('catalog-visible');
+                } else {
+                    $('.catalog-container').removeClass('catalog-visible');
+                }
             });
     }
 });
