@@ -75,13 +75,18 @@ jQuery(document).ready(function($) {
         if ($catalog.length) {
             var $header = $('.intro-header');
             var headerH = $header.outerHeight();
-            // Initial position: right side, below header
             $catalog.css({ top: headerH + 'px', right: 'calc((100vw - 1140px) / 2)' });
             $(window).on('scroll', function() {
-                if ($(window).scrollTop() > headerH - 70) {
+                var st = $(window).scrollTop();
+                if (st > headerH - 70) {
+                    // Fixed mode: top = max(headerH - scrollTop, 70)
+                    // Starts at headerH - scrollTop (smooth from absolute),
+                    // settles at 70px once scrolled far enough
+                    $catalog.css('top', Math.max(headerH - st, 70) + 'px');
                     $catalog.addClass('catalog-fixed');
                 } else {
                     $catalog.removeClass('catalog-fixed');
+                    $catalog.css('top', headerH + 'px');
                 }
             });
         }
