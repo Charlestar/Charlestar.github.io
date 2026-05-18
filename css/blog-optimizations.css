@@ -198,33 +198,28 @@ article .row {
   z-index: 5;
 }
 
-/* ── Sidebar Container: Full width below post content ── */
-.sidebar-container-full {
+/* ── Sidebar Section: Inside post-container, below comments ── */
+.sidebar-section {
+  margin-top: 40px;
+  padding-top: 20px;
   clear: both;
-  width: 100%;
-  max-width: 700px;
-  margin: 60px auto 30px;
-  padding: 0 15px;
 }
-.sidebar-container-full h5 {
+.sidebar-section h5 {
   color: var(--text-muted) !important;
   padding-bottom: 1em;
   margin-bottom: 15px;
 }
-.sidebar-container-full h5 a {
+.sidebar-section h5 a {
   color: var(--text-muted) !important;
   text-decoration: none;
 }
-.sidebar-container-full hr {
-  margin-top: 20px;
-  margin-bottom: 20px;
+.sidebar-section .tags a {
+  border-color: var(--tag-border);
+  color: var(--text-secondary) !important;
 }
-.sidebar-container {
-  position: relative;
-  margin-top: 40px;
-  margin-bottom: 30px;
-  clear: both;
-  z-index: auto;
+.sidebar-section .tags a:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color) !important;
 }
 
 /* ── Apply Variables to Body ── */
@@ -440,11 +435,9 @@ a:hover {
 }
 
 /* ── Sidebar ── */
-.sidebar-container {
+.sidebar-container,
+.sidebar-container-full {
   color: var(--text-secondary);
-  position: relative;
-  z-index: 1;
-  clear: both;
 }
 .sidebar-container h5,
 .sidebar-container h5 a {
