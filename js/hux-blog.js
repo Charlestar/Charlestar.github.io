@@ -47,13 +47,13 @@ jQuery(document).ready(function($) {
 
     //primary navigation slide-in effect
     if ($(window).width() > MQL) {
-        var headerHeight = $('.navbar-custom').height(),
-            bannerHeight  = $('.intro-header .container').height();
+        var headerHeight = $('.navbar-custom').height();
         $(window).on('scroll', {
                 previousTop: 0
             },
             function() {
-                var currentTop = $(window).scrollTop();
+                var currentTop = $(window).scrollTop(),
+                    bannerHeight = $('.intro-header').outerHeight();
 
                 //check if user is scrolling up by mouse or keyborad
                 if (currentTop < this.previousTop) {
@@ -71,7 +71,7 @@ jQuery(document).ready(function($) {
                 this.previousTop = currentTop;
 
                 //toggle catalog visibility when scrolling past the banner
-                if (currentTop > bannerHeight) {
+                if (currentTop > bannerHeight - 80) {
                     $('.catalog-container').addClass('catalog-visible');
                 } else {
                     $('.catalog-container').removeClass('catalog-visible');

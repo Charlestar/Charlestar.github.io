@@ -70,8 +70,8 @@
 </script>
 {% endif %}
 
-<!-- Lunr.js for search (only on index page) -->
-{% if page.url == "/" or paginator %}
+<!-- Lunr.js for search (only on pages with search enabled) -->
+{% if page.search %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lunr.js/2.3.9/lunr.min.js"></script>
 {% endif %}
 
