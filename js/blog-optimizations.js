@@ -212,39 +212,65 @@
 
   // ── Search (Lunr.js integration) ──
   function initSearch() {
-    const searchInput = document.getElementById('site-search');
-    const searchResults = document.getElementById('search-results');
-    const searchData = document.getElementById('search-data');
+    var searchInput = document.getElementById('site-search');
+    var searchResults = document.getElementById('search-results');
+    var searchData = document.getElementById('search-data');
 
-    if (!searchInput || !searchResults) return;
+    if (!searchInput || !searchResults || !searchData) return;
 
-    let idx = null;
+    var idx = null;
+    var posts = [];
 
     function buildIndex() {
-      if (!searchData) return;
       try {
-        const data = JSON.parse(searchData.textContent);
+        posts = JSON.parse(searchData.textContent);
+      } catch(e) {
+        console.warn('Search data parse failed:', e);
+        return;
+      }
+      if (typeof lunr === 'undefined') {
+        console.warn('Lunr.js not loaded');
+        return;
+      }
+      try {
         idx = lunr(function() {
           this.ref('url');
           this.field('title', { boost: 10 });
           this.field('tags', { boost: 5 });
           this.field('content');
-          data.forEach(function(doc) {
-            this.add(doc);
-          }.bind(this));
+          for (var i = 0; i < posts.length; i++) {
+            this.add(posts[i]);
+          }
         });
       } catch(e) {
-        console.warn('Search index build failed:', e);
+        console.warn('Lunr index build failed, using fallback:', e);
       }
     }
 
+    function fallbackSearch(query) {
+      var q = query.toLowerCase();
+      return posts.filter(function(p) {
+        return (p.title && p.title.toLowerCase().indexOf(q) !== -1) ||
+               (p.tags && p.tags.join(' ').toLowerCase().indexOf(q) !== -1) ||
+               (p.content && p.content.toLowerCase().indexOf(q) !== -1);
+      }).map(function(p) {
+        return { ref: p.url };
+      });
+    }
+
     function search(query) {
-      if (!idx || !query || query.length < 2) {
+      if (!query || query.length < 2) {
         searchResults.style.display = 'none';
         return;
       }
 
-      const results = idx.search(query);
+      var results;
+      if (idx) {
+        try { results = idx.search(query); } catch(e) { results = fallbackSearch(query); }
+      } else {
+        results = fallbackSearch(query);
+      }
+
       if (results.length === 0) {
         searchResults.innerHTML = '<div class="search-result-item"><span style="color:var(--text-muted)">No results found</span></div>';
         searchResults.style.display = 'block';
@@ -252,11 +278,19 @@
       }
 
       searchResults.innerHTML = '';
-      results.forEach(function(result) {
-        const doc = idx.get(result.ref);
+      results.slice(0, 10).forEach(function(result) {
+        var doc = null;
+        if (idx) {
+          try { doc = idx.get(result.ref); } catch(e) {}
+        }
+        if (!doc) {
+          for (var i = 0; i < posts.length; i++) {
+            if (posts[i].url === result.ref) { doc = posts[i]; break; }
+          }
+        }
         if (!doc) return;
 
-        const item = document.createElement('div');
+        var item = document.createElement('div');
         item.className = 'search-result-item';
 
         const link = document.createElement('a');

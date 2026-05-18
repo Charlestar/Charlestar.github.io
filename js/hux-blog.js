@@ -52,8 +52,7 @@ jQuery(document).ready(function($) {
                 previousTop: 0
             },
             function() {
-                var currentTop = $(window).scrollTop(),
-                    bannerHeight = $('.intro-header').outerHeight();
+                var currentTop = $(window).scrollTop();
 
                 //check if user is scrolling up by mouse or keyborad
                 if (currentTop < this.previousTop) {
@@ -69,13 +68,15 @@ jQuery(document).ready(function($) {
                     if (currentTop > headerHeight && !$('.navbar-custom').hasClass('is-fixed')) $('.navbar-custom').addClass('is-fixed');
                 }
                 this.previousTop = currentTop;
-
-                //toggle catalog visibility when scrolling past the banner
-                if (currentTop > bannerHeight - 80) {
-                    $('.catalog-container').addClass('catalog-visible');
-                } else {
-                    $('.catalog-container').removeClass('catalog-visible');
-                }
             });
+
+        // Catalog visibility: show when scrolled past header, keep visible
+        var $catalog = $('.catalog-container');
+        var headerBottom = $('.intro-header').offset().top + $('.intro-header').outerHeight();
+        $(window).on('scroll', function() {
+            if ($(window).scrollTop() > headerBottom - 80) {
+                $catalog.addClass('catalog-visible');
+            }
+        });
     }
 });
