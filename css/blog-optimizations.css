@@ -183,22 +183,25 @@ article .post-container {
 }
 
 /* ── Catalog Container: Position to RIGHT side ── */
+article .row {
+  position: relative;
+}
 .catalog-container {
   position: absolute;
-  right: 0;
-  left: auto;
+  right: -210px;
   top: 0;
   width: 200px;
   padding: 0;
   z-index: 5;
 }
 
-/* ── Sidebar Container: Below post content ── */
+/* ── Sidebar Container: Below post content, properly spaced ── */
 .sidebar-container {
   position: relative;
-  z-index: 1;
   margin-top: 40px;
+  margin-bottom: 30px;
   clear: both;
+  z-index: auto;
 }
 
 /* ── Apply Variables to Body ── */
@@ -439,18 +442,28 @@ a:hover {
   border-color: var(--accent-color);
   color: var(--accent-color) !important;
 }
-/* Ensure Giscus comments are above sidebar */
-#giscus-container,
-.giscus {
+/* Ensure Giscus comments are properly visible and not covered */
+#giscus-container {
   position: relative;
-  z-index: 10;
+  margin-top: 30px;
   margin-bottom: 40px;
-}
-/* Clear floats before sidebar */
-.post-container::after {
-  content: "";
-  display: block;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
   clear: both;
+  z-index: 2;
+}
+/* Add margin below giscus before sidebar tags */
+#giscus-container::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+/* Sidebar tags section - below giscus */
+.sidebar-container {
+  position: relative;
+  z-index: 1;
+  margin-top: 30px;
+  padding-bottom: 30px;
 }
 
 /* ── Tags ── */
