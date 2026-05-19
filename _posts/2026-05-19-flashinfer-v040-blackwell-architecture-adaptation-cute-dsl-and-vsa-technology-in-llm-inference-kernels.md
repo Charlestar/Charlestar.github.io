@@ -3,8 +3,10 @@ layout: post
 title: "FlashInfer v0.4.0 黑格威架构适配：CuTe DSL 与 VSA 技术在 LLM 推理内核中的应用"
 date: 2026-05-19 12:00:00 +0800
 author: iStar
+header-img: /img/post-bg-ai-infra.jpg
 catalog: true
 mathjax: true
+tags: [AI Infra, FlashInfer, GPU优化, CUDA, LLM推理]
 ---
 
 # FlashInfer v0.4.0 黑格威架构适配：CuTe DSL 与 VSA 技术在 LLM 推理内核中的应用
