@@ -7,7 +7,7 @@ last_modified_at: 2026-08-09
 author: iStar
 catalog: true
 series: moe-communication
-series_order: 30
+series_order: 40
 technology_year: 2025
 mathjax: true
 tags: [AI Infra, MoE, DeepEP, Expert Parallel, RDMA]
