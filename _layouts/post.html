@@ -20,6 +20,10 @@ layout: default
         <span>{{ page.author | default: site.author.name }}</span>
         <span aria-hidden="true">·</span>
         <time datetime="{{ page.date | date_to_xmlschema }}">{{ page.date | date: '%Y 年 %-m 月 %-d 日' }}</time>
+        {% if page.last_modified_at %}
+        <span aria-hidden="true">·</span>
+        <time datetime="{{ page.last_modified_at | date_to_xmlschema }}">校订于 {{ page.last_modified_at | date: '%Y 年 %-m 月 %-d 日' }}</time>
+        {% endif %}
         <span aria-hidden="true">·</span>
         <span data-reading-time>约 1 分钟阅读</span>
       </div>

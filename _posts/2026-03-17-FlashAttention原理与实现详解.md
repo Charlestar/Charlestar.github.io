@@ -1,265 +1,81 @@
 ---
 layout: post
-title: FlashAttention 原理与实现详解
-subtitle: IO 感知的快速注意力机制
+title: "FlashAttention：IO-aware 的精确注意力"
+subtitle: "分块、在线 Softmax 与复杂度边界"
 date: 2026-03-17
+last_modified_at: 2026-08-09
 author: iStar
 catalog: true
 mathjax: true
-tags:
-  - AI Infra
-  - LLM推理
-  - 注意力机制
+tags: [AI Infra, LLM推理, 注意力机制]
 ---
 
-> **摘要**：FlashAttention 是由 Tri Dao 等人提出的快速且内存高效的精确注意力算法。它通过 IO 感知的设计，显著减少了 GPU 高带宽内存（HBM）与片上 SRAM 之间的数据读写次数，实现了比传统注意力机制更快的训练和推理速度。本文详细解析 FlashAttention 的核心原理、算法实现及后续演进。
+## 1. 优化目标
 
----
+标准注意力为
 
-# 一、核心问题：为什么需要 FlashAttention
+$$O=\operatorname{softmax}(QK^T/\sqrt d)V$$
 
-## 1.1 传统注意力的瓶颈
+朴素实现会把 $N\times N$ 的 score/probability 矩阵写入 HBM。FlashAttention 的关键不是近似或稀疏化，而是通过 tiling 与重计算减少 HBM↔片上存储的读写，同时得到数学上精确的注意力结果（有限精度舍入次序可能不同）。
 
-标准 Transformer 注意力机制的计算过程：
+## 2. 在线 Softmax
 
-$$ \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d}}\right) \cdot V $$
+对每行分块处理时，需要维护当前最大值 $m$ 和指数和 $\ell$。新块最大值为 $m_b$、指数和为 $\ell_b$ 时：
 
-其中：
-- $Q$ (Query): 形状为 $(N, d)$
-- $K$ (Key): 形状为 $(N, d)$  
-- $V$ (Value): 形状为 $(N, d)$
-- $N$: 序列长度
-- $d$: 头维度
+$$m'=\max(m,m_b)$$
 
-**传统实现的三大问题：**
+$$\ell'=e^{m-m'}\ell+e^{m_b-m'}\ell_b$$
 
-1. **内存复杂度 O(N²)**：注意力分数矩阵 $S = QK^T$ 需要 $O(N^2)$ 的存储空间
-2. **IO 瓶颈**：在 GPU 上，主要瓶颈不是计算速度，而是**内存访问速度**
-3. **多次 HBM 访问**：标准实现需要多次将中间结果写入 HBM 再读回
+旧的部分输出也按 $e^{m-m'}$ 重标定。这样无需保存完整注意力矩阵，就能稳定地合并多个块。
 
-## 1.2 GPU 内存层次结构
+## 3. 复杂度不要混淆
 
-```
-┌─────────────────────────────────────┐
-│           HBM (高带宽内存)           │  容量：GB 级别，带宽：~1-3 TB/s
-│   存储 Q, K, V, 注意力矩阵，输出      │
-└─────────────────┬───────────────────┘
-                  │
-┌─────────────────▼───────────────────┐
-│          L2 Cache (二级缓存)         │  容量：MB 级别
-└─────────────────┬───────────────────┘
-                  │
-┌─────────────────▼───────────────────┐
-│     SRAM (片上内存/寄存器)           │  容量：KB 级别，速度：~10-20× HBM
-│   用于实际计算                        │
-└─────────────────────────────────────┘
-```
+对 dense attention，FlashAttention 的算术复杂度仍为 $O(N^2d)$；它降低的是额外内存占用与 IO 复杂度。标题或总结不能写成把 dense attention 变成线性时间。
 
-关键点：**SRAM 速度比 HBM 快 10-20 倍**，但容量非常有限。
+## 4. FlashAttention-2/3 的方向
 
----
+后续版本通过更好的 work partition、减少非矩阵乘法开销、适配 Hopper 异步能力与低精度路径继续优化。可用版本受 GPU 架构、CUDA、PyTorch、dtype、head dimension 和 mask 类型限制。
 
-# 二、FlashAttention 的核心原理
+## 5. 使用建议
 
-## 2.1 核心思想：Tiling（分块）
+- 优先使用 PyTorch SDPA 或上层框架的 backend dispatch，再按需直接调用包 API。
+- 检查实际选择的 kernel；不支持的 shape 可能回退。
+- 分别测 prefill 与 decode。长序列 prefill 更容易体现 IO 优势，单 token decode 的瓶颈不同。
+- 比较输出误差、峰值显存和端到端时间，不只测一个 kernel。
 
-FlashAttention 的关键创新是使用**分块技术**将注意力计算分解为多个小块，使得每个小块可以完全在 SRAM 中完成计算，从而**最小化 HBM 访问次数**。
+## 6. 分块计算过程
 
-## 2.2 算法流程
+设 $Q$ 按行分块、$K,V$ 按列分块。对一个 query block，算法遍历所有 KV blocks，并维护每行的最大值 $m_i$、归一化因子 $\ell_i$ 与未归一化输出累积 $o_i$：
 
-```
-输入：Q, K, V (在 HBM 中)
-输出：O = Attention(Q, K, V) (在 HBM 中)
-
-1. 将 Q 分割成块 Q₁, Q₂, ..., Q_{N/B}
-2. 将 K, V 分割成块 K₁, K₂, ..., K_{N/B}
-3. 对于每个 Q 块：
-   a. 加载 Qᵢ 到 SRAM
-   b. 初始化输出块 Oᵢ 和归一化因子 ℓᵢ
-   c. 对于每个 K, V 块：
-      - 加载 Kⱼ, Vⱼ 到 SRAM
-      - 计算局部注意力分数 Sᵢⱼ = QᵢKⱼ^T
-      - 使用在线 softmax 更新 Oᵢ 和 ℓᵢ
-      - 释放 Kⱼ, Vⱼ
-   d. 将 Oᵢ 写回 HBM
+```text
+for each Q block:
+    initialize m = -inf, l = 0, o = 0
+    for each K/V block:
+        s = Q_block @ K_block.T * scale
+        m_new = max(m, rowmax(s))
+        p = exp(s - m_new)
+        l_new = exp(m - m_new) * l + rowsum(p)
+        o = exp(m - m_new) * o + p @ V_block
+        m, l = m_new, l_new
+    O_block = o / l
 ```
 
-## 2.3 在线 Softmax（Online Softmax）
+真实 kernel 会融合 mask、dropout、位置偏置和数据搬运，并根据共享内存/寄存器容量选择 tile。伪代码的价值是说明：只要保存每行少量统计量，就能逐块合并 softmax。
 
-传统 softmax 需要先计算所有分数再归一化，但 FlashAttention 使用**在线 softmax**算法，可以在流式计算中逐步更新：
+## 7. 反向传播为什么省显存
 
-$$ m(x) = \max(m_{prev}, x_{max}) $$
-$$ \ell(x) = e^{m_{prev} - m(x)} \cdot \ell_{prev} + \sum e^{x_i - m(x)} $$
-$$ O_{new} = \frac{\ell_{prev} \cdot e^{m_{prev} - m(x)}}{\ell(x)} \cdot O_{prev} + \frac{\sum e^{x_i - m(x)} \cdot V_i}{\ell(x)} $$
+普通实现为反向传播保存完整 attention probability。FlashAttention 保存输出和 softmax 归一化统计量，在 backward 中重新计算局部 score/probability。这样用额外计算换取更少 HBM 写入和更低峰值显存。这里的 recomputation 是设计的一部分，不是实现缺陷。
 
-这样就不需要存储完整的注意力矩阵！
+## 8. Prefill 与 Decode 的差异
 
----
+Prefill 同时有多个 query token，矩阵形状较大，更容易发挥 Tensor Core 和 tiling 优势。Decode 通常每个序列只有一个新 query，却要读取全部历史 KV；瓶颈更偏向缓存带宽、分页布局和 batch 组织。因此 serving 框架可能为 prefill 与 decode 选择不同 kernel/backend。
 
-# 三、IO 复杂度分析
+## 9. 数值与正确性检查
 
-## 3.1 理论结果
+在小尺寸上以 FP32 朴素 attention 为 reference，分别测试 causal/non-causal、不同长度、head dimension、GQA 和 mask。比较最大绝对误差与相对误差，并对全 mask 行、极大 logits、非对齐长度和 dropout 做边界测试。低精度结果不应要求逐 bit 相等，但必须满足设定的误差预算。
 
-FlashAttention 的 IO 复杂度为：
+## 参考资料
 
-$$ \text{IO Complexity} = O\left(\frac{N^2 d^2}{M}\right) $$
-
-其中 $M$ 是 SRAM 大小。
-
-相比之下，标准注意力的 IO 复杂度为 $O(N^2 d)$。
-
-**加速比**：当 $M \gg d^2$ 时，FlashAttention 可以实现显著的加速。
-
-## 3.2 实际性能
-
-在 A100 GPU 上的实测结果：
-
-| 序列长度 | FlashAttention | 标准 Attention | 加速比 |
-|---------|---------------|---------------|--------|
-| 512     | 0.12ms        | 0.35ms        | 2.9×   |
-| 1024    | 0.45ms        | 1.42ms        | 3.2×   |
-| 2048    | 1.78ms        | 5.89ms        | 3.3×   |
-| 4096    | 7.12ms        | 24.5ms        | 3.4×   |
-
----
-
-# 四、FlashAttention-2 改进
-
-2023 年，Tri Dao 等人发布了 FlashAttention-2，进一步优化：
-
-## 4.1 主要改进
-
-1. **更好的并行策略**：改变线程块的工作分配方式
-2. **减少非 GEMM 操作**：优化注意力计算中的非矩阵乘法部分
-3. **改进的序列长度并行**：更好地处理长序列
-
-## 4.2 性能提升
-
-FlashAttention-2 相比第一代的改进：
-
-- **长序列（64K+）**: 2× 加速
-- **短序列**: 1.5× 加速
-- **整体吞吐量**: 提升约 40%
-
----
-
-# 五、实现细节
-
-## 5.1 CUDA 内核结构
-
-FlashAttention 的核心是一个精心优化的 CUDA 内核：
-
-```cuda
-__global__ void flash_attention_kernel(
-    const float* Q, const float* K, const float* V,
-    float* O, float* L, float* M,
-    int batch_size, int seq_len, int num_heads, int head_dim,
-    int block_size
-) {
-    // 每个线程块处理一个 Q 块
-    int q_block_idx = blockIdx.x;
-    int head_idx = blockIdx.y;
-    
-    // 共享内存存储 Q 块
-    __shared__ float Q_block[BLOCK_SIZE][HEAD_DIM];
-    __shared__ float K_block[BLOCK_SIZE][HEAD_DIM];
-    __shared__ float V_block[BLOCK_SIZE][HEAD_DIM];
-    
-    // 加载 Q 块到共享内存
-    load_q_block(Q, Q_block, q_block_idx, head_idx);
-    
-    // 初始化在线 softmax 状态
-    float m_prev = -INFINITY;
-    float ell_prev = 0.0f;
-    
-    // 遍历所有 K, V 块
-    for (int kv_block_idx = 0; kv_block_idx < num_kv_blocks; kv_block_idx++) {
-        // 加载 K, V 块
-        load_kv_block(K, V, K_block, V_block, kv_block_idx, head_idx);
-        
-        // 计算注意力分数
-        compute_attention_scores(Q_block, K_block, scores);
-        
-        // 在线 softmax 更新
-        online_softmax_update(scores, V_block, &m_prev, &ell_prev, O_block);
-    }
-    
-    // 写回结果
-    store_output(O, O_block, q_block_idx, head_idx);
-}
-```
-
-## 5.2 关键优化技巧
-
-1. **共享内存复用**：最大化利用有限的 SRAM
-2. **寄存器阻塞**：减少寄存器溢出到本地内存
-3. **异步内存传输**：使用异步拷贝隐藏内存延迟
-4. **指令级并行**：充分利用 Tensor Core
-
----
-
-# 六、使用指南
-
-## 6.1 安装
-
-```bash
-pip install flash-attn --no-build-isolation
-```
-
-## 6.2 基本使用
-
-```python
-from flash_attn import flash_attn_func
-
-# Q, K, V: (batch, seq_len, num_heads, head_dim)
-output = flash_attn_func(Q, K, V, dropout_p=0.0, softmax_scale=None)
-```
-
-## 6.3 与 PyTorch 集成
-
-```python
-import torch
-from flash_attn.modules.mha import FlashSelfAttention
-
-flash_attn = FlashSelfAttention()
-output = flash_attn(q, k, v)
-```
-
----
-
-# 七、总结
-
-FlashAttention 通过 IO 感知的设计，实现了注意力机制的重大突破：
-
-✅ **核心贡献**：
-- 分块技术最小化 HBM 访问
-- 在线 softmax 避免存储完整注意力矩阵
-- 精确计算（无近似）
-
-✅ **实际效果**：
-- 训练速度提升 2-4×
-- 内存占用显著降低
-- 支持更长序列
-
-✅ **后续演进**：
-- FlashAttention-2: 更好的并行策略
-- FlashAttention-3: 支持 FP8 量化
-- 被广泛集成到主流框架（PyTorch 2.0+、vLLM 等）
-
----
-
-## 参考文献
-
-1. Tri Dao et al. "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness." NeurIPS 2022.
-2. Tri Dao. "FlashAttention-2: Attention with Non-Uniform Workload Distribution." 2023.
-3. FlashAttention GitHub: https://github.com/Dao-AILab/flash-attention
-
----
-
-*本文基于技术文档整理，如有错误欢迎指正。*
-
-**相关文章**：
-- [GQA 分组查询注意力详解](/2026/03/17/GQA分组查询注意力详解/)
-- [PagedAttention 与 vLLM 内存管理](/2026/03/17/PagedAttention与vLLM内存管理/)
-- [FlashInfer 深度解析](/2026/05/13/flashinfer-deep-dive/)
-- [2026 大模型推理引擎全景对比](/2026/05/11/2026大模型推理引擎全景对比/)
+- [FlashAttention paper](https://arxiv.org/abs/2205.14135)
+- [FlashAttention-2 paper](https://arxiv.org/abs/2307.08691)
+- [FlashAttention official repository](https://github.com/Dao-AILab/flash-attention)

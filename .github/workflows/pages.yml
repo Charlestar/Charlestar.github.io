@@ -30,6 +30,8 @@ jobs:
         with:
           ruby-version: "3.3"
           bundler-cache: true
+      - name: Audit post content
+        run: node scripts/audit-posts.mjs
       - name: Build site
         env:
           JEKYLL_ENV: production

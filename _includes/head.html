@@ -56,6 +56,7 @@
     "url": {{ canonical_url | jsonify }},
     "inLanguage": "zh-CN"{% if page.layout == 'post' %},
     "datePublished": {{ page.date | date_to_xmlschema | jsonify }},
+    "dateModified": {{ page.last_modified_at | default: page.date | date_to_xmlschema | jsonify }},
     "author": {"@type": "Person", "name": {{ page.author | default: site.author.name | jsonify }}}
     {% endif %}
   }
