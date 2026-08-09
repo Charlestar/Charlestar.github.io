@@ -2,7 +2,7 @@
 layout: post
 title: "Expert Parallel：MoE Token 为什么要两次穿过 GPU 网络"
 subtitle: "从 EP 分组、All-to-All 通信量到 Prefill/Decode 的并行选择"
-date: 2026-08-09 16:42:00 +0800
+date: 2026-07-17 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

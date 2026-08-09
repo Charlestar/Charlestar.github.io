@@ -2,7 +2,7 @@
 layout: post
 title: "MLA：为什么一份 Latent 可以代替多头 KV Cache"
 subtitle: "从联合低秩压缩、矩阵吸收到 Decoupled RoPE 与 FlashMLA 执行模式"
-date: 2026-08-09 17:58:00 +0800
+date: 2026-06-20 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

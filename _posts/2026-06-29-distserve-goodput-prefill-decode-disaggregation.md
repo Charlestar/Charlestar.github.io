@@ -2,7 +2,7 @@
 layout: post
 title: "DistServe：为什么 Prefill 与 Decode 要分开配置"
 subtitle: "从阶段干扰、每 GPU Goodput 到带宽感知 Placement"
-date: 2026-08-09 16:20:00 +0800
+date: 2026-06-29 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

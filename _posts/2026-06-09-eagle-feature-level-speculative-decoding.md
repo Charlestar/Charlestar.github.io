@@ -2,7 +2,7 @@
 layout: post
 title: "EAGLE：为什么推测解码要预测 Feature"
 subtitle: "从 Feature Uncertainty、Advanced Token 到树形草稿与无损验证"
-date: 2026-08-09 16:00:00 +0800
+date: 2026-06-09 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

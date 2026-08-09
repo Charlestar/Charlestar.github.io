@@ -2,7 +2,7 @@
 layout: post
 title: "LLM 推理容量规划：从请求 Trace 推到 GPU 数量"
 subtitle: "把 ISL、OSL、KV Cache、P/D Goodput 与扩容提前量放进同一张账"
-date: 2026-08-09 16:30:00 +0800
+date: 2026-07-11 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

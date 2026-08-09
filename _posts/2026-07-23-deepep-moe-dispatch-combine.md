@@ -2,7 +2,7 @@
 layout: post
 title: "DeepEP：把 MoE 的 Dispatch 与 Combine 做成专用数据面"
 subtitle: "理解变长通信、两级互联、低延迟路径、FP8 传输与计算重叠"
-date: 2026-08-09 16:46:00 +0800
+date: 2026-07-23 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

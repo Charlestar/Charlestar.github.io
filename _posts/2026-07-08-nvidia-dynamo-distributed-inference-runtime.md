@@ -2,7 +2,7 @@
 layout: post
 title: "NVIDIA Dynamo：把多套推理引擎组织成一个系统"
 subtitle: "从请求路由、KV 状态到 P/D 扩缩容与 Kubernetes 编排"
-date: 2026-08-09 16:22:00 +0800
+date: 2026-07-08 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

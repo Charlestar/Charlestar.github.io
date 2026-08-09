@@ -2,7 +2,7 @@
 layout: post
 title: "FP8 推理：E4M3、E5M2、Scale 与 Tensor Core 到底怎样配合"
 subtitle: "分清权重存储、Activation 量化、GEMM、KV Cache 与通信的五条低精度路径"
-date: 2026-08-09 17:35:00 +0800
+date: 2026-08-01 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

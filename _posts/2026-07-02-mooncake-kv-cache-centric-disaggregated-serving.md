@@ -2,7 +2,7 @@
 layout: post
 title: "Mooncake：让 KV Cache 跨 Prefill 与 Decode 流动"
 subtitle: "从分离式推理、分布式缓存池到缓存感知调度与高速传输"
-date: 2026-08-09 16:10:00 +0800
+date: 2026-07-02 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

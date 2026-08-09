@@ -2,7 +2,7 @@
 layout: post
 title: "分布式 LLM 推理故障恢复：一条流式请求怎样活下来"
 subtitle: "从健康检测、请求迁移到 KV 状态、优雅下线与过载保护"
-date: 2026-08-09 16:35:00 +0800
+date: 2026-07-14 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

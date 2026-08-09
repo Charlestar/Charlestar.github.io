@@ -2,7 +2,7 @@
 layout: post
 title: "Tensor Parallel：怎样把一个 Transformer Layer 切到多张 GPU"
 subtitle: "从 Column/Row Parallel MLP 到 Attention、Sequence Parallel 与二维设备网格"
-date: 2026-08-09 18:10:00 +0800
+date: 2026-08-08 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

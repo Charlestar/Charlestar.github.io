@@ -2,7 +2,7 @@
 layout: post
 title: "W4A8：4-bit Weight 怎样喂给 8-bit Tensor Core"
 subtitle: "从 Progressive Quantization、寄存器解包到 QServe 的系统协同设计"
-date: 2026-08-09 17:49:00 +0800
+date: 2026-08-04 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

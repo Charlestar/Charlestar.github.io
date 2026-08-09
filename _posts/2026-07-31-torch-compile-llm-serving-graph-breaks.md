@@ -2,7 +2,7 @@
 layout: post
 title: "torch.compile：LLM Serving 从 Python Forward 到融合 GPU Kernel"
 subtitle: "沿着 Dynamo、FX、Guards、Inductor 与 Graph Break 理解编译收益和冷启动"
-date: 2026-08-09 17:10:00 +0800
+date: 2026-07-31 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

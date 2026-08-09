@@ -2,7 +2,7 @@
 layout: post
 title: "MoE 负载均衡：从 Router 偏置到 Expert 副本与 EPLB"
 subtitle: "分清训练时均衡、推理时重排，以及不改变 Top-k 语义的热点分流"
-date: 2026-08-09 16:53:00 +0800
+date: 2026-07-20 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

@@ -2,7 +2,7 @@
 layout: post
 title: "KV Cache：自回归推理为什么必须保存历史状态"
 subtitle: "从重复计算、每 Token 显存到 MHA/GQA/MQA 与缓存生命周期"
-date: 2026-08-09 15:50:00 +0800
+date: 2026-06-26 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

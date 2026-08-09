@@ -2,7 +2,7 @@
 layout: post
 title: "DSpark：用置信度决定推测解码该验证多远"
 subtitle: "从半自回归草稿、前缀存活概率到 SGLang Ragged Verification"
-date: 2026-08-09 12:00:00 +0800
+date: 2026-06-11 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

@@ -2,7 +2,7 @@
 layout: post
 title: "Continuous Batching：为什么 Batch 可以动态变化"
 subtitle: "从请求粒度到 Iteration-Level Scheduling，理解生成式推理的批次重组"
-date: 2026-08-09 15:00:00 +0800
+date: 2026-06-04 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

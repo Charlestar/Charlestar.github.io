@@ -2,7 +2,7 @@
 layout: post
 title: "从 Data Parallel 到 ZeRO/FSDP：训练显存到底怎样被切开"
 subtitle: "逐项计算参数、梯度、Optimizer State、Activation 与 Collective 的生命周期"
-date: 2026-08-09 18:03:00 +0800
+date: 2026-08-06 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

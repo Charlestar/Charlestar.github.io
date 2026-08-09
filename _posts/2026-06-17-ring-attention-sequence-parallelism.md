@@ -2,7 +2,7 @@
 layout: post
 title: "Ring Attention：把超长序列沿设备环流动"
 subtitle: "从分块 Online Softmax 到 KV 通信与本地 Attention 计算重叠"
-date: 2026-08-09 15:20:00 +0800
+date: 2026-06-17 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

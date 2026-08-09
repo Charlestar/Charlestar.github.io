@@ -2,7 +2,7 @@
 layout: post
 title: "Wide EP：当 MoE Expert Parallel 横跨几十张 GPU"
 subtitle: "从 Attention DP、跨节点 All-to-All 到 P/D 两套并行布局"
-date: 2026-08-09 16:59:00 +0800
+date: 2026-07-26 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

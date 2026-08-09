@@ -2,7 +2,7 @@
 layout: post
 title: "NIXL 与 KV Connector：把推理引擎和传输后端解耦"
 subtitle: "从内存注册、元数据握手到异步 P/D KV Cache 交接"
-date: 2026-08-09 16:15:00 +0800
+date: 2026-07-05 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

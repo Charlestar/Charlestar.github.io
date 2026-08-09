@@ -2,7 +2,7 @@
 layout: post
 title: "AWQ：为什么 4-bit 权重量化要先观察 Activation"
 subtitle: "从显著通道、等价缩放到 W4A16 Kernel 与端到端 Serving 收益"
-date: 2026-08-09 17:15:00 +0800
+date: 2026-08-03 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

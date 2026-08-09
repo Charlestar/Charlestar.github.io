@@ -2,7 +2,7 @@
 layout: post
 title: "FlashAttention-3：用异步流水榨出 Hopper 的 Attention 性能"
 subtitle: "从 TMA、WGMMA、Warp Specialization 到更准确的 FP8 Attention"
-date: 2026-08-09 15:40:00 +0800
+date: 2026-06-23 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

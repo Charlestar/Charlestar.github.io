@@ -2,7 +2,7 @@
 layout: post
 title: "FlashAttention-2：从 IO-aware 到更好的并行划分"
 subtitle: "为什么同一个精确注意力算法，还能通过 Thread Block 与 Warp 重排再快一倍"
-date: 2026-08-09 15:15:00 +0800
+date: 2026-06-14 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true

@@ -2,7 +2,7 @@
 layout: post
 title: "SmoothQuant：把 Activation Outlier 迁移到 Weight"
 subtitle: "从等价通道缩放到 W8A8 INT8 GEMM、Q/DQ 融合与 Serving 收益"
-date: 2026-08-09 17:45:00 +0800
+date: 2026-08-02 09:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
