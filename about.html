@@ -1,117 +1,61 @@
 ---
-layout: page
-title: "About"
-description: "AI Infra Engineer / Cloud Native Enthusiast"
-header-img: "img/about-bg.jpg"
+layout: default
+title: 关于
+description: AI Infra Engineer / Cloud Native Enthusiast
+permalink: /about/
 ---
-
-<div class="post-container">
-
-<!-- Hero -->
-<div style="text-align:center; margin: 24px 0;">
-    <img src="/img/about-ZZC.jpg" alt="ZZC" style="width:120px;height:120px;border-radius:50%;object-fit:cover;margin-bottom:16px;box-shadow: 0 4px 16px rgba(0,0,0,0.1);">
-    <h2 style="margin:8px 0;">子辰 (ZZC / Charles)</h2>
-    <p style="color:var(--text-secondary);font-size:15px;">AI Infra @ 阿里云 · 杭州</p>
-</div>
-
-<hr>
-
-<!-- About Me -->
-<div class="about-section">
-    <h3>👋 关于我</h3>
-    <p>我是一名 <strong>AI 基础设施工程师</strong>，目前在<strong>阿里云</strong>从事 AI Infra 相关工作。</p>
-    <p>专注于大模型推理系统的性能优化，包括：</p>
-    <ul>
-        <li>推理引擎架构（SGLang、vLLM、TensorRT-LLM）</li>
-        <li>注意力机制优化（PagedAttention、FlashAttention、RadixAttention）</li>
-        <li>显存管理与 KV Cache 优化</li>
-        <li>稀疏化技术（MoE、Speculative Decoding）</li>
-        <li>GPU Kernel 优化（Triton、CUDA）</li>
-    </ul>
-    <p>工作之余，我喜欢通过写博客来整理技术体系、分享学习心得。同时也是一个摄影和旅行爱好者。</p>
-</div>
-
-<!-- Skills -->
-<div class="about-section">
-    <h3>🛠️ 技术栈</h3>
-    <div style="margin: 12px 0;">
-        <p><strong>AI/ML Infra</strong></p>
-        <span class="skill-tag">SGLang</span>
-        <span class="skill-tag">vLLM</span>
-        <span class="skill-tag">FlashInfer</span>
-        <span class="skill-tag">TensorRT-LLM</span>
-        <span class="skill-tag">CUDA</span>
-        <span class="skill-tag">Triton</span>
-        <span class="skill-tag">MoE</span>
-        <span class="skill-tag">KV Cache</span>
-        <span class="skill-tag">FlashAttention</span>
+<header class="about-hero">
+  <div class="shell about-hero-grid">
+    <div class="about-portrait-wrap">
+      <div class="portrait-ring" aria-hidden="true"></div>
+      <img class="about-portrait" src="{{ '/img/about-ZZC.jpg' | relative_url }}" alt="子辰的头像">
     </div>
-    <div style="margin: 12px 0;">
-        <p><strong>开发语言</strong></p>
-        <span class="skill-tag">Python</span>
-        <span class="skill-tag">Go</span>
-        <span class="skill-tag">C++</span>
-        <span class="skill-tag">Rust</span>
+    <div>
+      <p class="eyebrow">About me</p>
+      <h1>你好，我是子辰。</h1>
+      <p class="about-lead">AI 基础设施工程师，关注大模型推理系统、GPU 性能与云原生基础设施。</p>
+      <div class="about-links">
+        <a class="button button-primary" href="mailto:{{ site.author.email }}">联系我</a>
+        <a class="button button-ghost" href="https://github.com/{{ site.github_username }}" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </div>
     </div>
-    <div style="margin: 12px 0;">
-        <p><strong>工具 & 平台</strong></p>
-        <span class="skill-tag">Docker</span>
-        <span class="skill-tag">Kubernetes</span>
-        <span class="skill-tag">Linux</span>
-        <span class="skill-tag">Git</span>
-        <span class="skill-tag">LangGraph</span>
-        <span class="skill-tag">MCP</span>
+  </div>
+</header>
+
+<div class="shell narrow-shell about-content">
+  <section class="about-intro content-panel">
+    <p class="section-index">01 / PROFILE</p>
+    <div>
+      <h2>把复杂问题讲清楚，<br>也把工程细节做扎实。</h2>
+      <p>目前在阿里云从事 AI Infra 相关工作，专注大模型推理系统的性能优化。我喜欢从底层机制出发理解系统，也通过写作整理技术脉络和实践经验。</p>
+      <p>工作之外，我也喜欢摄影与旅行。它们提醒我：好的观察往往先于好的答案。</p>
     </div>
-</div>
+  </section>
 
-<!-- Timeline -->
-<div class="about-section">
-    <h3>📅 经历</h3>
-    <div class="timeline-item">
-        <div class="timeline-date">2025.07 - 至今</div>
-        <div class="timeline-title">阿里云 · AI Infra 工程师</div>
-        <div class="timeline-desc">从事大模型推理系统优化相关工作</div>
+  <section class="content-panel stack-panel">
+    <div class="panel-heading"><p class="section-index">02 / STACK</p><h2>关注的技术方向</h2></div>
+    <div class="stack-grid">
+      <div><span>01</span><h3>推理系统</h3><p>SGLang · vLLM · TensorRT-LLM · KV Cache</p></div>
+      <div><span>02</span><h3>GPU 性能</h3><p>CUDA · Triton · FlashAttention · FlashInfer</p></div>
+      <div><span>03</span><h3>模型优化</h3><p>MoE · Speculative Decoding · PagedAttention</p></div>
+      <div><span>04</span><h3>工程平台</h3><p>Kubernetes · Docker · Linux · Cloud Native</p></div>
     </div>
-    <div class="timeline-item">
-        <div class="timeline-date">2025.07 - 2026.05</div>
-        <div class="timeline-title">技术博客 · 持续更新</div>
-        <div class="timeline-desc">发布多篇 AI Infra 领域深度技术文章，涵盖推理引擎对比、FlashAttention、PagedAttention、MoE 等主题</div>
+  </section>
+
+  <section class="content-panel experience-panel">
+    <div class="panel-heading"><p class="section-index">03 / NOW</p><h2>现在</h2></div>
+    <div class="experience-row">
+      <time>2025.07 — 至今</time>
+      <div><h3>阿里云 · AI Infra 工程师</h3><p>从事大模型推理系统优化相关工作，并持续记录 AI Infra 领域的技术思考。</p></div>
     </div>
-</div>
+  </section>
 
-<!-- Links -->
-<div class="about-section">
-    <h3>🔗 找到我</h3>
-    <ul style="list-style:none;padding:0;">
-        <li style="margin:8px 0;">
-            <a href="https://github.com/Charlestar" target="_blank" rel="noopener">
-                <i class="fa-brands fa-github" style="width:24px;color:var(--accent-color);"></i> GitHub
-            </a>
-        </li>
-        <li style="margin:8px 0;">
-            <a href="https://x.com/Charles03838116" target="_blank" rel="noopener">
-                <i class="fa-brands fa-x-twitter" style="width:24px;color:var(--accent-color);"></i> Twitter / X
-            </a>
-        </li>
-        <li style="margin:8px 0;">
-            <a href="mailto:charlestarzhang@gmail.com">
-                <i class="fas fa-envelope" style="width:24px;color:var(--accent-color);"></i> charlestarzhang@gmail.com
-            </a>
-        </li>
-    </ul>
-</div>
-
-<!-- Blog Stats -->
-<div class="about-section">
-    <h3>📊 博客统计</h3>
-    <p>
-        共 <strong>{{ site.posts.size }}</strong> 篇文章
-        {% assign total_tags = site.tags.size %}
-        · 覆盖 <strong>{{ total_tags }}</strong> 个技术主题
-    </p>
-    <p style="color:var(--text-muted);font-size:13px;">
-        最近更新时间：{{ site.time | date: "%Y-%m-%d" }}
-    </p>
-</div>
-
+  <section class="about-cta">
+    <p class="eyebrow">Let’s connect</p>
+    <h2>如果你也在研究这些问题，欢迎交流。</h2>
+    <div>
+      <a href="mailto:{{ site.author.email }}">{{ site.author.email }}</a>
+      <a href="https://x.com/{{ site.twitter_username }}" target="_blank" rel="noopener noreferrer">X / Twitter ↗</a>
+    </div>
+  </section>
 </div>

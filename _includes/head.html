@@ -1,75 +1,63 @@
 <head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="google-site-verification" content="xBT4GhYoi5qRD5tr338pgPM5OWHHIDR6mNg1a3euekI" />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}">
-    <meta name="keywords"  content="{{ site.keyword }}">
-    <meta name="theme-color" content="#0085a1">
-    <meta name="generator" content="Jekyll {{ jekyll.version }}">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="{{ site.pwa.theme_color }}">
+  <meta name="generator" content="Jekyll {{ jekyll.version }}">
 
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="{% if page.layout == 'post' %}article{% else %}website{% endif %}">
-    <meta property="og:title" content="{% if page.title %}{{ page.title }} - {{ site.title }}{% else %}{{ site.SEOTitle }}{% endif %}">
-    <meta property="og:description" content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}">
-    <meta property="og:url" content="{{ page.url | replace:'index.html','' | prepend: site.baseurl | prepend: site.url }}">
-    {% if page.header-img %}
-    <meta property="og:image" content="{{ site.url }}{{ site.baseurl }}{{ page.header-img }}">
-    {% else %}
-    <meta property="og:image" content="{{ site.url }}{{ site.baseurl }}/img/og-default.svg">
+  {% assign meta_description = page.description | default: page.subtitle | default: site.description %}
+  {% assign canonical_url = page.url | replace: 'index.html', '' | absolute_url %}
+  <title>{% if page.title %}{{ page.title }} · {{ site.title }}{% else %}{{ site.SEOTitle }}{% endif %}</title>
+  <meta name="description" content="{{ meta_description | strip_html | normalize_whitespace | escape }}">
+  <meta name="keywords" content="{% if page.tags %}{{ page.tags | join: ',' }},{{ site.keyword }}{% else %}{{ site.keyword }}{% endif %}">
+  <link rel="canonical" href="{{ canonical_url }}">
+  <link rel="alternate" type="application/atom+xml" title="{{ site.title }}" href="{{ '/feed.xml' | absolute_url }}">
+
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:site_name" content="{{ site.title }}">
+  <meta property="og:type" content="{% if page.layout == 'post' %}article{% else %}website{% endif %}">
+  <meta property="og:title" content="{% if page.title %}{{ page.title }}{% else %}{{ site.SEOTitle }}{% endif %}">
+  <meta property="og:description" content="{{ meta_description | strip_html | normalize_whitespace | escape }}">
+  <meta property="og:url" content="{{ canonical_url }}">
+  <meta property="og:image" content="{{ '/img/og-default.png' | absolute_url }}">
+  {% if page.layout == 'post' %}
+  <meta property="article:published_time" content="{{ page.date | date_to_xmlschema }}">
+  {% for tag in page.tags %}<meta property="article:tag" content="{{ tag | escape }}">{% endfor %}
+  {% endif %}
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{% if page.title %}{{ page.title }}{% else %}{{ site.SEOTitle }}{% endif %}">
+  <meta name="twitter:description" content="{{ meta_description | strip_html | normalize_whitespace | escape }}">
+  <meta name="twitter:image" content="{{ '/img/og-default.png' | absolute_url }}">
+
+  <link rel="manifest" href="{{ '/pwa/manifest.json' | relative_url }}">
+  <link rel="icon" href="{{ '/img/favicon.ico' | relative_url }}" sizes="any">
+  <link rel="apple-touch-icon" href="{{ '/img/main-icon.png' | relative_url }}">
+  <link rel="stylesheet" href="{{ '/css/main.css' | relative_url }}">
+
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('theme');
+        var theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.dataset.theme = theme;
+      } catch (_) {}
+      document.documentElement.classList.add('js');
+    })();
+  </script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "{% if page.layout == 'post' %}BlogPosting{% else %}WebSite{% endif %}",
+    "name": {{ page.title | default: site.title | jsonify }},
+    "headline": {{ page.title | default: site.SEOTitle | jsonify }},
+    "description": {{ meta_description | strip_html | normalize_whitespace | jsonify }},
+    "url": {{ canonical_url | jsonify }},
+    "inLanguage": "zh-CN"{% if page.layout == 'post' %},
+    "datePublished": {{ page.date | date_to_xmlschema | jsonify }},
+    "author": {"@type": "Person", "name": {{ page.author | default: site.author.name | jsonify }}}
     {% endif %}
-    {% if page.layout == 'post' %}
-    <meta property="article:published_time" content="{{ page.date | date_to_xmlschema }}">
-    <meta property="article:author" content="{{ site.url }}/">
-    {% for tag in page.tags %}<meta property="article:tag" content="{{ tag }}">{% endfor %}
-    {% endif %}
-
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{% if page.title %}{{ page.title }} - {{ site.title }}{% else %}{{ site.SEOTitle }}{% endif %}">
-    <meta name="twitter:description" content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}">
-    {% if page.header-img %}
-    <meta name="twitter:image" content="{{ site.url }}{{ site.baseurl }}{{ page.header-img }}">
-    {% else %}
-    <meta name="twitter:image" content="{{ site.url }}{{ site.baseurl }}/img/og-default.svg">
-    {% endif %}
-    
-    <title>{% if page.title %}{{ page.title }} - {{ site.SEOTitle }}{% else %}{{ site.SEOTitle }}{% endif %}</title>
-
-    <!-- Web App Manifest -->
-    <link rel="manifest" href="{{ site.baseurl }}/pwa/manifest.json">
-
-    <!-- Favicon -->
-    <link rel="shortcut icon" href="{{ site.baseurl }}/img/favicon.ico">
-
-    <!-- Apple Touch Icon -->
-    <link rel="apple-touch-icon" href="{{ site.baseurl }}/img/main-icon.png">
-    
-    <!-- Canonical URL -->
-    <link rel="canonical" href="{{ page.url | replace:'index.html','' | prepend: site.baseurl | prepend: site.url }}">
-
-    <!-- Preconnect for performance -->
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-    <link rel="preconnect" href="https://giscus.app" crossorigin>
-
-    <!-- Bootstrap Core CSS -->
-    <link rel="stylesheet" href="{{ "/css/bootstrap.min.css" | prepend: site.baseurl }}">
-
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ "/css/hux-blog.min.css" | prepend: site.baseurl }}">
-
-    <!-- Syntax CSS -->
-    <link rel="stylesheet" href="{{ "/css/syntax.css" | prepend: site.baseurl }}">
-
-    <!-- Font Awesome -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet" type="text/css">
-
-    <!-- Custom Overrides (dark mode, code blocks, etc.) -->
-    <link rel="stylesheet" href="{{ "/css/blog-optimizations.css" | prepend: site.baseurl }}">
-
-    <!-- IE8 support removed; GitHub Pages serves modern browsers only -->
-
-    <!-- ga & ba script hoook -->
-    <script></script>
+  }
+  </script>
 </head>

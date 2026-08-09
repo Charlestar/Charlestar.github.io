@@ -1,22 +1,20 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-
-{% include head.html %}
-
-<!-- hack iOS CSS :active style -->
-<body ontouchstart="">
-
+<!doctype html>
+<html lang="{{ site.lang | default: 'zh-CN' }}">
+  {% include head.html %}
+  <body class="layout-{{ page.layout | default: 'default' }}">
+    <a class="skip-link" href="#main-content">跳到正文</a>
+    <div class="reading-progress" aria-hidden="true"></div>
     {% include nav.html %}
-
-    {{ content }}
-
+    <main id="main-content">
+      {{ content }}
+    </main>
     {% include footer.html %}
-
-
-<!-- Image to hack wechat -->
-<img src="/img/main-icon.png" width="0" height="0" />
-<!-- Migrate from head to bottom, no longer block render and still work -->
-
-</body>
-
+    <script src="{{ '/js/main.js' | relative_url }}" defer></script>
+    {% if page.mathjax %}
+    <script>
+      window.MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+    {% endif %}
+  </body>
 </html>

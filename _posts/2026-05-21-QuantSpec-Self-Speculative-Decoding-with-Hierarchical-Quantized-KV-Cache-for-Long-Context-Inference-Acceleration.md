@@ -7,8 +7,6 @@ catalog: true
 mathjax: true
 ---
 
-![QuantSpec架构图：自推测解码与分层量化KV Cache](/assets/images/2026-05-21-header.png)
-
 # QuantSpec: 自推测解码与分层量化KV Cache的长上下文推理加速方案
 
 ## 引言

@@ -7,8 +7,6 @@ catalog: true
 mathjax: true
 ---
 
-![MoE模型与推测解码协同优化示意图](/assets/images/2026-05-29-header.png)
-
 # MoE模型与推测解码的协同优化：2025年LLM推理加速的新前沿
 
 ## 引言

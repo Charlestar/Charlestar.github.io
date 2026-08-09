@@ -1,70 +1,40 @@
 ---
-title: Tags
+title: 技术主题
 layout: default
-description: keep hungry keep foolish
-header-img: "img/tag-bg.jpg"
+description: 按主题探索全部技术文章。
+permalink: /tags/
 ---
-
-<!-- Page Header -->
-<header class="intro-header" style="background-image: url('{{ site.baseurl }}/{% if page.header-img %}{{ page.header-img }}{% else %}{{ site.header-img }}{% endif %}')">
-    <div class="container">
-        <div class="row">
-            <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
-                <div class="site-heading" id="tag-heading">
-                    <h1>{% if page.title %}{{ page.title }}{% else %}{{ site.title }}{% endif %}</h1>
-                    <span class="subheading">{{ page.description }}</span>
-                </div>
-            </div>
-        </div>
-    </div>
+<header class="page-hero topic-hero">
+  <div class="shell narrow-shell">
+    <p class="eyebrow">Knowledge map</p>
+    <h1>技术主题</h1>
+    <p class="hero-summary">从推理引擎到 GPU Kernel，从算法原理到生产实践。</p>
+  </div>
 </header>
 
-<!-- Main Content -->
-<div class="container">
-	<div class="row">
-		<div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
-            <!-- 标签云 -->
-			<div id='tag_cloud' class="tags">
-				{% for tag in site.tags %}
-				<a href="#{{ tag[0] }}" title="{{ tag[0] }}" rel="{{ tag[1].size }}">{{ tag[0] }}</a>
-				{% endfor %}
-			</div>
+<div class="shell narrow-shell topics-page">
+  <nav class="tag-cloud" aria-label="全部标签">
+    {% for tag in site.tags %}
+    <a href="#{{ tag[0] | url_encode }}"><span>{{ tag[0] }}</span><small>{{ tag[1].size }}</small></a>
+    {% endfor %}
+  </nav>
 
-            <!--<blockquote class="tag-comments">
-                标签命名规范：
-                    <li>行业观察、职位、公司优先使用中文</li>
-                    <li>外国产品、术语优先使用英文</li>
-            </blockquote>-->
-
-            <!-- 标签列表 -->
-			{% for tag in site.tags %}
-			<div class="one-tag-list">
-			  	<span class="fa fa-tag listing-seperator" id="{{ tag[0] }}">
-                    <span class="tag-text">{{ tag[0] }}</span>
-                </span>
-				{% for post in tag[1] %}
-				  <!-- <li class="listing-item">
-				  <time datetime="{{ post.date | date:"%Y-%m-%d" }}">{{ post.date | date:"%Y-%m-%d" }}</time>
-				  <a href="{{ post.url }}" title="{{ post.title }}">{{ post.title }}</a>
-				  </li> -->
-				 <div class="post-preview">
-				    <a href="{{ post.url | prepend: site.baseurl }}">
-				        <h2 class="post-title">
-                            {{ post.title }}
-				        </h2>
-				        {% if post.subtitle %}
-				        <h3 class="post-subtitle">
-				            {{ post.subtitle }}
-				        </h3>
-				        {% endif %}
-				    </a>
-				    <!-- <p class="post-meta">{{ post.date | date:"%Y-%m-%d" }}</p> -->
-				</div>
-				<hr>
-				{% endfor %}
-			</div>
-			{% endfor %}
-
-		</div>
-	</div>
+  <div class="topic-groups">
+    {% for tag in site.tags %}
+    <section class="topic-group" id="{{ tag[0] }}">
+      <div class="topic-group-heading">
+        <h2>{{ tag[0] }}</h2><span>{{ tag[1].size }} 篇</span>
+      </div>
+      <div class="topic-posts">
+        {% for post in tag[1] %}
+        <a href="{{ post.url | relative_url }}">
+          <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: '%Y.%m.%d' }}</time>
+          <span>{{ post.title }}</span>
+          <b aria-hidden="true">→</b>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
 </div>

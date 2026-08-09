@@ -3,7 +3,6 @@ layout: post
 title: "异步连续批处理深度解析：从 CUDA Stream 到双缓冲机制"
 date: 2026-05-16 12:00:00 +0800
 author: iStar
-header-img: /img/post-bg-ai-infra.jpg
 catalog: true
 mathjax: true
 tags: [AI Infra, LLM推理, CUDA, 推理优化]
@@ -184,8 +183,6 @@ def stream_synchronization_example():
 4. **双缓冲区（Double Buffer）**：实现 Ping-Pong 切换
 
 ### 系统架构图
-
-![异步连续批处理详细架构图](/assets/images/2026-05-16-diagram1.png)
 
 上图展示了异步连续批处理的核心架构。系统包含两个主要的数据流：
 

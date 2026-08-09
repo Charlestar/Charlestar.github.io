@@ -5,7 +5,6 @@ catalog: true
 mathjax: true
 title: LangGraph + MCP 实战：构建生产级多 Agent 系统的完整指南
 date: 2026-05-14
-header-img: /img/post-bg-ai-infra.jpg
 tags:
   - AI Agent
   - LangGraph

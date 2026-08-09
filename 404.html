@@ -1,117 +1,17 @@
 ---
 layout: default
-description: "你来到了没有知识的荒原 🌌"
+title: 页面未找到
+description: 这个页面可能已经移动，或者从未存在。
 permalink: /404.html
 ---
-
-<style>
-.error-page {
-    min-height: 80vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 60px 20px;
-}
-.error-code {
-    font-size: 120px;
-    font-weight: 900;
-    color: var(--accent-color);
-    line-height: 1;
-    margin-bottom: 16px;
-    animation: float 3s ease-in-out infinite;
-}
-.error-message {
-    font-size: 20px;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-}
-.error-hint {
-    font-size: 14px;
-    color: var(--text-muted);
-    margin-bottom: 32px;
-}
-.error-actions {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-.error-actions a {
-    display: inline-block;
-    padding: 10px 24px;
-    border-radius: 24px;
-    text-decoration: none;
-    font-size: 14px;
-    transition: all 0.2s ease;
-}
-.btn-primary-custom {
-    background: var(--accent-color);
-    color: #fff !important;
-}
-.btn-primary-custom:hover {
-    background: var(--accent-hover);
-    color: #fff !important;
-}
-.btn-secondary-custom {
-    background: var(--bg-secondary);
-    color: var(--text-primary) !important;
-    border: 1px solid var(--border-color);
-}
-.btn-secondary-custom:hover {
-    background: var(--bg-card);
-    color: var(--accent-color) !important;
-}
-.error-terminal {
-    margin-top: 40px;
-    background: var(--code-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 16px 24px;
-    font-family: 'Fira Code', 'SF Mono', 'Consolas', monospace;
-    font-size: 13px;
-    color: var(--code-text);
-    text-align: left;
-    max-width: 480px;
-    width: 100%;
-}
-.error-terminal .prompt { color: #22c55e; }
-.error-terminal .cmd { color: var(--accent-color); }
-.error-terminal .output { color: var(--text-muted); }
-.typing-cursor {
-    display: inline-block;
-    width: 8px;
-    height: 16px;
-    background: var(--accent-color);
-    animation: blink 1s step-end infinite;
-    vertical-align: middle;
-    margin-left: 2px;
-}
-@keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
-}
-@keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
-}
-</style>
-
-<div class="error-page">
-    <div class="error-code">404</div>
-    <div class="error-message">{{ page.description }}</div>
-    <div class="error-hint">这个页面可能已经迁移，或者它从未存在过</div>
-    <div class="error-actions">
-        <a href="/" class="btn-primary-custom">🏠 返回首页</a>
-        <a href="/tags/" class="btn-secondary-custom">🏷️ 浏览标签</a>
-        <a href="/about/" class="btn-secondary-custom">👋 关于我</a>
-    </div>
-    <div class="error-terminal">
-        <div><span class="prompt">$</span> <span class="cmd">cat /var/log/access.log</span></div>
-        <div class="output">[ERROR] 404 Not Found</div>
-        <div class="output">[INFO] 页面可能已被重构或移动</div>
-        <div class="output">[SUGGEST] 试试首页搜索或浏览标签</div>
-        <div><span class="prompt">$</span> <span class="typing-cursor"></span></div>
-    </div>
-</div>
+<section class="error-page">
+  <div class="error-glow" aria-hidden="true"></div>
+  <p class="eyebrow">Error / 404</p>
+  <h1>走到知识地图的边缘了。</h1>
+  <p>{{ page.description }}</p>
+  <div class="error-actions">
+    <a class="button button-primary" href="{{ '/' | relative_url }}">返回首页</a>
+    <a class="button button-ghost" href="{{ '/tags/' | relative_url }}">浏览主题</a>
+  </div>
+  <div class="error-code" aria-hidden="true">404</div>
+</section>

@@ -1,84 +1,85 @@
-# Site settings
-title: ZZC's Blog                   # 博客标题
-SEOTitle: 子辰的博客 | ZZC's Blog    # 显示在浏览器上搜索的时候显示的标题
-header-img: img/home-bg.jpg    # 显示在首页的背景图片
-email: charlestarzhang@gmail.com
-description: "AI Infra 工程师的技术博客 — 专注大模型推理系统优化，分享 SGLang、vLLM、FlashInfer 等技术深度解析"
-keyword: "AI Infra, SGLang, vLLM, FlashInfer, 大模型推理, LLM, GPU优化, MoE, PagedAttention, 推测解码"
-url: "https://Charlestar.github.io"         # your host, for absolute URL
-baseurl: ""      # for example, '/blog' if your blog hosted on 'host/blog'
-github_repo: "https://github.com/Charlestar/Charlestar.github.io.git" # you code repository
+# Site identity
+title: Charlestar
+SEOTitle: 子辰的技术笔记 | AI Infra 与大模型推理
+description: 深入拆解大模型推理系统、GPU 优化与云原生工程实践。
+keyword: AI Infra,LLM 推理,vLLM,SGLang,FlashInfer,CUDA,云原生
+url: https://charlestar.github.io
+baseurl: ""
+lang: zh-CN
+timezone: Asia/Shanghai
 
+author:
+  name: 子辰
+  handle: Charlestar
+  email: charlestarzhang@gmail.com
 
-# Sidebar settings
-sidebar: true                           # whether or not using Sidebar.
-sidebar-about-description: "Goals determine what you going to be!"
-sidebar-avatar: /img/about-ZZC.jpg      # use absolute URL, seeing it's used in both `/` and `/about/`
+github_username: Charlestar
+twitter_username: Charles03838116
+github_repo: https://github.com/Charlestar/Charlestar.github.io
 
-
-# SNS settings
-RSS: false
-github_username:    Charlestar
-twitter_username:   Charles03838116
-facebook_username:  zhang.charlestar
-jianshu_username:   9833a6ffe865
-
-
-# Build settings
-# from 2016, 'pygments' is unsupported on GitHub Pages. Use 'rouge' for highlighting instead.
+# Content
 permalink: pretty
 paginate: 10
-exclude: ["less","node_modules","Gruntfile.js","package.json","README.md",".travis.yml","LICENSE","blog-audit-report-2026-05-15.md"]
-anchorjs: true                          # if you want to customize anchor. check out line:181 of `post.html`
+paginate_path: /page:num/
+featured-tags: true
+featured-condition-size: 0
 
+# Build
+plugins:
+  - jekyll-paginate
+  - jekyll-sitemap
+  - jekyll-feed
 
-# Plugins
-plugins: [jekyll-paginate, jekyll-sitemap, jekyll-feed]
-
-
-# Markdown settings
-# replace redcarpet to kramdown,
-# although redcarpet can auto highlight code, the lack of header-id make the catalog impossible, so I switch to kramdown
-# document: http://jekyllrb.com/docs/configuration/#kramdown
 markdown: kramdown
 highlighter: rouge
 kramdown:
-  input: GFM                            # use Github Flavored Markdown !important
+  input: GFM
   syntax_highlighter: rouge
   syntax_highlighter_opts:
-    css_class: 'highlight'
+    css_class: highlight
     span:
       line_numbers: false
     block:
       line_numbers: false
       start_line: 1
 
-
-# 评论系统
-# Giscus（基于 GitHub Discussions，无需暴露密钥）
-# 使用前需在 GitHub 仓库 Settings → Discussions 中启用，
-# 然后到 https://giscus.app/zh-CN 获取 repo-id 和 category-id
+# Comments
 giscus:
   enable: true
-  repo: "Charlestar/Charlestar.github.io"
-  repo-id: "MDEwOlJlcG9zaXRvcnkyMzg0NzE4OTU="
-  category: "Announcements"
-  category-id: "DIC_kwDODjbK184C9GBS"
-  mapping: "og:title"
+  repo: Charlestar/Charlestar.github.io
+  repo-id: MDEwOlJlcG9zaXRvcnkyMzg0NzE4OTU=
+  category: Announcements
+  category-id: DIC_kwDODjbK184C9GBS
+  mapping: og:title
   strict: "0"
   reactions-enabled: "1"
   emit-metadata: "0"
-  input-position: "bottom"
-  theme: "preferred_color_scheme"  # 自动跟随系统深色/浅色
-  lang: "zh-CN"
-  loading: "lazy"
+  input-position: bottom
+  lang: zh-CN
+  loading: lazy
 
+pwa:
+  enabled: true
+  theme_color: "#0f766e"
 
-# Featured Tags
-featured-tags: true                     # 是否使用首页标签
-featured-condition-size: 0              # 相同标签数量大于这个数，才会出现在首页
-
-
-# Progressive Web Apps
-chrome-tab-theme-color: "#0085a1"
-service-worker: true
+exclude:
+  - README.md
+  - LICENSE
+  - Gemfile
+  - Gemfile.lock
+  - vendor
+  - blog-audit-report-2026-05-15.md
+  - fonts
+  - _posts/assets
+  - img/404-bg.jpg
+  - img/avatar_g.jpg
+  - img/avatar_m.jpg
+  - img/home-bg*.jpg
+  - img/post-bg-*
+  - img/post-sample-image.jpg
+  - img/tag-bg*.jpg
+  - img/ZZC_blog_logo.png
+  - img/og-default.svg
+  - assets/images/2025-03-27-推荐算法特征交叉/image-2.png
+  - assets/images/2026-05-16-diagram1.png
+  - assets/images/2026-05-24-header.png

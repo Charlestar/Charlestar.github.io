@@ -681,6 +681,7 @@ llm-d暴露了数百个Prometheus指标，关键指标包括：
 
 #### 5.1.2 完整监控配置
 
+{% raw %}
 ```yaml
 # Prometheus ServiceMonitor配置
 apiVersion: monitoring.coreos.com/v1
@@ -762,6 +763,7 @@ spec:
       }
     }
 ```
+{% endraw %}
 
 #### 5.1.3 日志与追踪
 
@@ -779,6 +781,7 @@ llm-d支持结构化日志输出和分布式追踪：
 
 以下是一个典型的Prometheus告警规则配置：
 
+{% raw %}
 ```yaml
 # Prometheus告警规则
 apiVersion: monitoring.coreos.com/v1
@@ -816,6 +819,7 @@ spec:
         summary: "High P99 latency"
         description: "P99 latency exceeds 300ms for more than 2 minutes"
 ```
+{% endraw %}
 
 这些告警规则可以帮助运维团队及时发现和解决问题，确保系统的稳定运行。
 

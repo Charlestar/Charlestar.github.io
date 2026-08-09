@@ -7,8 +7,6 @@ catalog: true
 mathjax: true
 ---
 
-![FlashInfer Sorting-Free Sampling算法原理](/assets/images/2026-05-24-header.png)
-
 # FlashInfer Sorting-Free Sampling：LLM推理采样性能突破的算法创新
 
 在人工智能技术飞速发展的今天，大规模语言模型（LLM）已经成为众多应用的核心组件。从智能客服到内容创作，从代码生成到知识问答，LLM的应用场景日益广泛。然而，随着模型规模的不断扩大，推理效率问题也日益突出，成为制约LLM广泛应用的关键瓶颈之一。

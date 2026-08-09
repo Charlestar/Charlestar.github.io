@@ -7,8 +7,6 @@ catalog: true
 mathjax: true
 ---
 
-![AI生成GPU Kernel优化LLM推理架构图](/assets/images/2026-05-22-header.png)
-
 # FlashInfer-Bench：AI 自动生成 GPU Kernel 的生产级部署实践
 
 ## 引言
@@ -57,8 +55,6 @@ def traditional_optimization_cycle():
 FlashInfer-Bench 正是为了解决这些问题而设计的完整解决方案。
 
 ## FlashInfer-Bench 架构详解
-
-![FlashInfer-Bench系统架构图](/assets/images/2026-05-22-diagram1.png)
 
 ### FlashInfer Trace 标准化协议
 

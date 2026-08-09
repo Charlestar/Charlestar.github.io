@@ -1,22 +1,15 @@
 {
-  "name": "ZZC's Blog",
-  "short_name": "ZZC Blog",
-  "description": "Every failure is leading towards success.",
-  "icons": [
-    {
-      "src": "/pwa/icons/pwa_icon_128.png",
-      "sizes": "128x128",
-      "type": "image/png"
-    },
-    {
-      "src": "/pwa/icons/pwa_icon_512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ],
-  "background_color": "#fff",
-  "theme_color": "#000",
+  "name": "Charlestar · 子辰的技术笔记",
+  "short_name": "Charlestar",
+  "description": "关于 AI Infra、大模型推理与云原生工程的技术笔记。",
+  "lang": "zh-CN",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "orientation": "portrait"
+  "background_color": "#f4f7f5",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "/pwa/icons/pwa_icon_128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "/pwa/icons/pwa_icon_512.png", "sizes": "512x512", "type": "image/png" }
+  ]
 }

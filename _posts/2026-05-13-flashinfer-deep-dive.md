@@ -5,7 +5,6 @@ catalog: true
 mathjax: true
 title: FlashInfer 深度解析：从 JIT 编译到 AI 生成 Kernel 的 LLM 推理加速革命
 date: 2026-05-13
-header-img: /img/post-bg-ai-infra.jpg
 tags:
   - AI Infra
   - FlashInfer
@@ -470,6 +469,7 @@ class FlashInferBench:
 
 MLSys 2026 将举办 FlashInfer AI Kernel Generation Contest，重点关注为 NVIDIA Blackwell 架构生成最优的稀疏 Attention kernel：
 
+{% raw %}
 ```python
 def blackwell_sparse_attention_kernel_generator():
     """
@@ -514,6 +514,7 @@ __global__ void blackwell_sparse_attention_kernel(
     
     return kernel_code
 ```
+{% endraw %}
 
 ## 7. 实战部署指南
 
