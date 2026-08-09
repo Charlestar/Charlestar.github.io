@@ -6,6 +6,9 @@ date: 2026-05-25 12:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: serving-scheduling
+series_order: 60
+technology_year: 2026
 mathjax: true
 tags: [AI Infra, vLLM, LLM推理, GPU优化]
 ---

@@ -6,6 +6,9 @@ date: 2026-03-17
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: attention-long-context
+series_order: 10
+technology_year: 2022
 mathjax: true
 tags: [AI Infra, LLM推理, 注意力机制]
 ---

@@ -1,0 +1,53 @@
+- id: attention-long-context
+  order: 10
+  title: Attention 与长上下文
+  short_title: Attention
+  description: 从 IO-aware 精确注意力出发，理解 KV 头共享、跨设备长序列计算与稀疏注意力。
+
+- id: kv-cache-memory
+  order: 20
+  title: KV Cache 与内存系统
+  short_title: KV Cache
+  description: 沿着缓存的生成、分配、复用、迁移和量化路径，理解 LLM Serving 的状态管理。
+
+- id: serving-scheduling
+  order: 30
+  title: Serving 引擎与请求调度
+  short_title: Serving
+  description: 从批次形成到 GPU 执行，拆解请求如何进入调度器、缓存管理器和模型运行时。
+
+- id: speculative-decoding
+  order: 40
+  title: 推测解码
+  short_title: 推测解码
+  description: 从无损接受与校正出发，追踪 EAGLE、量化自推测和动态验证的发展路径。
+
+- id: moe-communication
+  order: 50
+  title: MoE 与分布式通信
+  short_title: MoE
+  description: 围绕路由、专家计算、负载均衡与跨设备通信，分析稀疏模型的真实执行成本。
+
+- id: distributed-inference
+  order: 60
+  title: 分布式推理与云原生部署
+  short_title: 分布式推理
+  description: 理解 Prefill/Decode 解耦、KV 传输、缓存感知路由和 GPU 集群资源编排。
+
+- id: gpu-runtime-precision
+  order: 70
+  title: GPU Kernel、编译器与低精度
+  short_title: GPU Runtime
+  description: 从执行图和 kernel 组合深入采样、量化与生产性能验证。
+
+- id: distributed-training
+  order: 80
+  title: 分布式训练与后训练
+  short_title: 分布式训练
+  description: 讨论状态分片、并行策略、checkpoint、训练存储以及强化学习训练流水线。
+
+- id: model-serving-agents
+  order: 90
+  title: 模型服务能力与 Agent Infra
+  short_title: Agent Infra
+  description: 连接 Adapter、多模态编码、结构化生成、工具协议和可恢复的 Agent 工作流。

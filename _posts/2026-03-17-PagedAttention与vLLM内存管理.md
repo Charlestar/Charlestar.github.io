@@ -6,6 +6,9 @@ date: 2026-03-17
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: kv-cache-memory
+series_order: 20
+technology_year: 2023
 mathjax: true
 tags: [AI Infra, LLM推理, KV Cache, vLLM]
 ---

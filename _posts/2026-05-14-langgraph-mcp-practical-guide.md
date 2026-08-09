@@ -6,6 +6,9 @@ date: 2026-05-14
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: model-serving-agents
+series_order: 40
+technology_year: 2025
 tags: [AI Agent, LangGraph, MCP]
 ---
 

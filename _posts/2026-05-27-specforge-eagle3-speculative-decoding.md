@@ -6,6 +6,9 @@ date: 2026-05-27 12:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: speculative-decoding
+series_order: 40
+technology_year: 2025
 tags: [AI Infra, SGLang, SpecForge, EAGLE3, 推测解码]
 ---
 

@@ -1,0 +1,64 @@
+---
+title: 技术系列
+layout: default
+description: 按技术演进顺序阅读 AI Infra 系列文章。
+permalink: /series/
+---
+<header class="page-hero series-hero">
+  <div class="shell narrow-shell">
+    <p class="eyebrow">Learning paths</p>
+    <h1>技术系列</h1>
+    <p class="hero-summary">发布日期记录写作时间，系列顺序还原技术演进。选择一条路径，从问题的起点连续读到当前实现。</p>
+  </div>
+</header>
+
+<main class="shell series-page">
+  <nav class="series-index" aria-label="技术系列索引">
+    {% for series in site.data.series %}
+      {% assign series_posts = site.posts | where: "series", series.id %}
+      <a href="#{{ series.id }}">
+        <span>{{ series.order | divided_by: 10 | prepend: '0' | slice: -2, 2 }}</span>
+        <strong>{{ series.title }}</strong>
+        <small>{{ series_posts.size }} 篇</small>
+      </a>
+    {% endfor %}
+  </nav>
+
+  <div class="series-groups">
+    {% for series in site.data.series %}
+      {% assign series_posts = site.posts | where: "series", series.id | sort: "series_order" %}
+      <section class="series-group" id="{{ series.id }}">
+        <header class="series-group-header">
+          <div>
+            <p class="series-number">Series {{ series.order | divided_by: 10 }}</p>
+            <h2>{{ series.title }}</h2>
+            <p>{{ series.description }}</p>
+          </div>
+          <span>{{ series_posts.size }} 篇文章</span>
+        </header>
+
+        {% if series_posts.size > 0 %}
+        <ol class="series-timeline">
+          {% for post in series_posts %}
+          <li>
+            <a href="{{ post.url | relative_url }}">
+              <div class="series-step">
+                <span>{{ forloop.index | prepend: '0' | slice: -2, 2 }}</span>
+                {% if post.technology_year %}<time>{{ post.technology_year }}</time>{% endif %}
+              </div>
+              <div>
+                <h3>{{ post.title }}</h3>
+                {% if post.subtitle %}<p>{{ post.subtitle }}</p>{% endif %}
+              </div>
+              <b aria-hidden="true">→</b>
+            </a>
+          </li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <p class="series-empty">这个系列正在准备中。</p>
+        {% endif %}
+      </section>
+    {% endfor %}
+  </div>
+</main>

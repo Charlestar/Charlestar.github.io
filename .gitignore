@@ -39,4 +39,6 @@ node_modules/
 
 # Build artifacts
 .jekyll-metadata
+.bundle/
+.tmp-jekyll-bundle/
 vendor/

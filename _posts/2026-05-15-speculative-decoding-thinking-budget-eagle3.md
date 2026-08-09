@@ -6,6 +6,9 @@ date: 2026-05-15 12:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: speculative-decoding
+series_order: 30
+technology_year: 2025
 tags: [AI Infra, 推测解码, EAGLE, LLM推理]
 ---
 

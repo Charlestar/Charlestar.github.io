@@ -6,6 +6,9 @@ date: 2026-05-29 12:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: speculative-decoding
+series_order: 60
+technology_year: 2026
 mathjax: true
 tags: [AI Infra, MoE, 推测解码, Expert Parallelism, LLM推理]
 ---

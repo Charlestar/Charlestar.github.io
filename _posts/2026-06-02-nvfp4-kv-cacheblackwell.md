@@ -6,6 +6,9 @@ date: 2026-06-02 12:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: kv-cache-memory
+series_order: 60
+technology_year: 2026
 mathjax: true
 tags: [AI Infra, LLM推理, KV Cache, NVFP4, Blackwell, 量化]
 ---

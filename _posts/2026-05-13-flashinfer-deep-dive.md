@@ -6,6 +6,9 @@ date: 2026-05-13
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: gpu-runtime-precision
+series_order: 50
+technology_year: 2025
 mathjax: true
 tags: [AI Infra, FlashInfer, CUDA, LLM推理]
 ---

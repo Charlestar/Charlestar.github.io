@@ -6,6 +6,9 @@ date: 2026-06-01 12:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: distributed-inference
+series_order: 40
+technology_year: 2025
 mathjax: true
 tags: [AI Infra, Kubernetes, llm-d, KV Cache, 分布式推理]
 ---

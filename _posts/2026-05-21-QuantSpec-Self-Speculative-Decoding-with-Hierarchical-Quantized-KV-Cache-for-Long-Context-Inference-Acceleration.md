@@ -6,6 +6,9 @@ date: 2026-05-21 12:00:00 +0800
 last_modified_at: 2026-08-09
 author: iStar
 catalog: true
+series: speculative-decoding
+series_order: 50
+technology_year: 2026
 mathjax: true
 tags: [AI Infra, 推测解码, KV Cache, 量化]
 ---

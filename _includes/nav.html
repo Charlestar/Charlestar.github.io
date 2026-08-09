@@ -15,6 +15,7 @@
 
     <nav class="site-nav" id="site-nav" aria-label="主导航">
       <a href="{{ '/' | relative_url }}"{% if page.url == '/' %} aria-current="page"{% endif %}>文章</a>
+      <a href="{{ '/series/' | relative_url }}"{% if page.url == '/series/' %} aria-current="page"{% endif %}>系列</a>
       <a href="{{ '/tags/' | relative_url }}"{% if page.url == '/tags/' %} aria-current="page"{% endif %}>主题</a>
       <a href="{{ '/about/' | relative_url }}"{% if page.url == '/about/' %} aria-current="page"{% endif %}>关于</a>
       <a href="{{ '/feed.xml' | relative_url }}">订阅</a>

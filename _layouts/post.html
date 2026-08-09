@@ -7,6 +7,10 @@ layout: default
     <div class="hero-orbit orbit-two" aria-hidden="true"></div>
     <div class="shell post-hero-inner">
       <a class="back-link" href="{{ '/' | relative_url }}">← 返回文章</a>
+      {% if page.series %}
+        {% assign series_meta = site.data.series | where: "id", page.series | first %}
+        <a class="series-hero-link" href="{{ '/series/' | relative_url }}#{{ page.series }}">系列 · {{ series_meta.title }}</a>
+      {% endif %}
       {% if page.tags %}
       <div class="tag-row" aria-label="文章标签">
         {% for tag in page.tags limit: 4 %}
@@ -39,6 +43,22 @@ layout: default
       </details>
       {% endif %}
 
+      {% if page.series %}
+        {% assign series_posts = site.posts | where: "series", page.series | sort: "series_order" %}
+        {% assign current_series_index = 0 %}
+        {% for series_post in series_posts %}
+          {% if series_post.url == page.url %}{% assign current_series_index = forloop.index0 %}{% endif %}
+        {% endfor %}
+        <aside class="series-context" aria-label="文章所属技术系列">
+          <div>
+            <p>技术系列</p>
+            <a href="{{ '/series/' | relative_url }}#{{ page.series }}">{{ series_meta.title }}</a>
+            <span>第 {{ current_series_index | plus: 1 }} / {{ series_posts.size }} 篇{% if page.technology_year %} · 技术阶段 {{ page.technology_year }}{% endif %}</span>
+          </div>
+          <a href="{{ '/series/' | relative_url }}#{{ page.series }}">查看完整路径 →</a>
+        </aside>
+      {% endif %}
+
       <div class="article-body prose" data-article-body>
         {{ content }}
       </div>
@@ -54,6 +74,26 @@ layout: default
         </div>
       </section>
 
+      {% if page.series %}
+        {% assign previous_series_index = current_series_index | minus: 1 %}
+        {% assign next_series_index = current_series_index | plus: 1 %}
+        {% assign previous_series_post = nil %}
+        {% assign next_series_post = nil %}
+        {% if previous_series_index >= 0 %}{% assign previous_series_post = series_posts[previous_series_index] %}{% endif %}
+        {% if next_series_index < series_posts.size %}{% assign next_series_post = series_posts[next_series_index] %}{% endif %}
+      <nav class="post-pager series-pager" aria-label="系列相邻文章">
+        {% if previous_series_post %}
+        <a href="{{ previous_series_post.url | relative_url }}">
+          <small>系列上一篇</small><span>{{ previous_series_post.title }}</span>
+        </a>
+        {% else %}<span></span>{% endif %}
+        {% if next_series_post %}
+        <a class="next" href="{{ next_series_post.url | relative_url }}">
+          <small>系列下一篇</small><span>{{ next_series_post.title }}</span>
+        </a>
+        {% endif %}
+      </nav>
+      {% else %}
       <nav class="post-pager" aria-label="相邻文章">
         {% if page.previous.url %}
         <a href="{{ page.previous.url | relative_url }}">
@@ -66,6 +106,7 @@ layout: default
         </a>
         {% endif %}
       </nav>
+      {% endif %}
 
       {% if page.tags and page.tags.size > 0 %}
         {% assign primary_tag = page.tags | first %}

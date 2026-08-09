@@ -89,6 +89,16 @@ search: true
     </div>
 
     <div class="sidebar-card">
+      <div class="sidebar-heading"><span>技术系列</span><a href="{{ '/series/' | relative_url }}">全部 →</a></div>
+      <div class="topic-list">
+        {% for series in site.data.series limit: 6 %}
+        {% assign series_posts = site.posts | where: "series", series.id %}
+        <a href="{{ '/series/' | relative_url }}#{{ series.id }}"><span>{{ series.short_title }}</span><small>{{ series_posts.size }}</small></a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="sidebar-card">
       <div class="sidebar-heading"><span>热门主题</span><a href="{{ '/tags/' | relative_url }}">全部 →</a></div>
       <div class="topic-list">
         {% assign sorted_tags = site.tags | sort %}
