@@ -7,7 +7,7 @@ last_modified_at: 2026-08-09
 author: iStar
 catalog: true
 series: gpu-runtime-precision
-series_order: 30
+series_order: 50
 technology_year: 2023
 mathjax: true
 tags: [AI Infra, AWQ, 量化, W4A16, LLM Serving]
