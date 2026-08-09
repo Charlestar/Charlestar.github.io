@@ -7,7 +7,7 @@ last_modified_at: 2026-08-09
 author: iStar
 catalog: true
 series: attention-long-context
-series_order: 50
+series_order: 60
 technology_year: 2024
 mathjax: true
 tags: [AI Infra, FlashAttention, Hopper, FP8]
@@ -731,10 +731,11 @@ FP8 路径又增加两项数值设计：每个 Q/K/V tile 独立量化，限制 
 FlashAttention   -> 控制 HBM IO
 FlashAttention-2 -> 改善 block/warp 并行划分
 Ring Attention   -> 将 sequence blocks 扩展到多设备
+MLA              -> 压缩每个 token 的 KV 表示
 FlashAttention-3 -> 利用 Hopper 异步流水与 FP8
 ```
 
-下一阶段将转向 KV Cache 系列，从“KV Cache 为什么存在、每个 token 到底占多少显存”开始，再连接已有的 PagedAttention、RadixAttention 与 NVFP4 文章。
+下一篇 DeepSeek Sparse Attention 会在 MLA 的压缩表示之上继续减少实际访问的历史位置：先用轻量 indexer 选出 top-k，再执行 sparse MLA，并把新的瓶颈推向选择、离散 gather 与稀疏 kernel。
 
 ## 参考资料
 

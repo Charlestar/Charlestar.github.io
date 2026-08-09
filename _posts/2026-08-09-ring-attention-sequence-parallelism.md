@@ -648,7 +648,7 @@ Ring Attention 将单 GPU 内的 blockwise attention 扩展到多设备：序列
 
 Ring Attention 保留 dense attention 语义，但不消除 $N^2$ 计算；causal 场景还会产生早晚 rank 工作不均衡，decode 的短 Q 也未必适合直接沿用训练环。它最适合说明一条重要边界：单卡 kernel 已经足够高效之后，长上下文的下一个瓶颈会转向 sequence placement、网络拓扑和通信/计算流水。
 
-下一篇 FlashAttention-3 会重新回到单卡内部，但硬件换成 Hopper：当 TMA、WGMMA 与异步执行改变了数据搬运和矩阵乘法的关系，attention kernel 如何用 producer-consumer warp specialization 和低精度能力建立新的流水线。
+下一篇会转向 DeepSeek-V2 的 Multi-head Latent Attention：它不再沿设备分摊完整 K/V，而是改变每个 token 被缓存的表示，用低秩 latent 与矩阵吸收压缩 Decode 必须反复读取的数据。
 
 ## 参考资料
 

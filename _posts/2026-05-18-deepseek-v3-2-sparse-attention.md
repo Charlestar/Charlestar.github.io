@@ -7,7 +7,7 @@ last_modified_at: 2026-08-09
 author: iStar
 catalog: true
 series: attention-long-context
-series_order: 60
+series_order: 70
 technology_year: 2025
 mathjax: true
 tags: [AI Infra, LLM推理, 稀疏注意力]
