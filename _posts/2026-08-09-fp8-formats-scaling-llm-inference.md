@@ -75,7 +75,7 @@ FP8 code + scale
 
 $$
 X_{fp8}=\operatorname{cast}_{fp8}
-\left(\operatorname{clip}\left(\frac{X}{s}\right)ight)
+\left(\operatorname{clip}\left(\frac{X}{s}\right)\right)
 $$
 
 反量化近似为：
