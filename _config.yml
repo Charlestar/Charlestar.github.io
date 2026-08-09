@@ -68,18 +68,4 @@ exclude:
   - Gemfile
   - Gemfile.lock
   - vendor
-  - blog-audit-report-2026-05-15.md
-  - fonts
-  - _posts/assets
-  - img/404-bg.jpg
-  - img/avatar_g.jpg
-  - img/avatar_m.jpg
-  - img/home-bg*.jpg
-  - img/post-bg-*
-  - img/post-sample-image.jpg
-  - img/tag-bg*.jpg
-  - img/ZZC_blog_logo.png
-  - img/og-default.svg
-  - assets/images/2025-03-27-推荐算法特征交叉/image-2.png
-  - assets/images/2026-05-16-diagram1.png
-  - assets/images/2026-05-24-header.png
+  - scripts
