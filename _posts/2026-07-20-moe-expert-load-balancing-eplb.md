@@ -10,7 +10,7 @@ series: moe-communication
 series_order: 30
 technology_year: 2024
 mathjax: true
-tags: [AI Infra, MoE, EPLB, 负载均衡, Expert Parallel]
+tags: [MoE, 专家并行, LLM推理]
 ---
 
 MoE 的 router 为每个 token 选择少数 experts。即使长期看每个 expert 获得的 token 数相近，一次在线 batch 仍可能很倾斜；如果某些主题、语言或请求类型反复命中同一组 experts，热点还会持续存在。

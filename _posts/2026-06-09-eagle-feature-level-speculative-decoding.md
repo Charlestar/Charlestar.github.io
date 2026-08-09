@@ -10,7 +10,7 @@ series: speculative-decoding
 series_order: 20
 technology_year: 2024
 mathjax: true
-tags: [AI Infra, EAGLE, 推测解码, LLM推理]
+tags: [推测解码, EAGLE, LLM推理]
 ---
 
 推测解码把生成过程拆成两部分：一个便宜的 drafter 先提出候选，目标模型再并行验证。它能否带来收益，很大程度上取决于两件事：候选是否足够接近目标模型，以及产生这些候选是否足够便宜。

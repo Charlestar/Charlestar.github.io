@@ -10,7 +10,7 @@ series: distributed-inference
 series_order: 40
 technology_year: 2025
 mathjax: true
-tags: [AI Infra, Kubernetes, llm-d, KV Cache, 分布式推理]
+tags: [分布式推理, Kubernetes, KV Cache]
 ---
 
 在 Kubernetes 上启动几个 vLLM Pod 并不困难，困难的是决定下一条请求应该进入哪个 Pod。

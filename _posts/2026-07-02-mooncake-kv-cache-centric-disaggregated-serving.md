@@ -10,7 +10,7 @@ series: kv-cache-memory
 series_order: 40
 technology_year: 2024
 mathjax: true
-tags: [AI Infra, Mooncake, KV Cache, 分离式推理, LLM推理]
+tags: [分离式推理, KV Cache, LLM推理]
 ---
 
 KV Cache 最初看起来只是单个推理进程中的一块显存：prefill 计算 prompt 的 K/V，decode 在生成每个 token 时继续读取并追加它。但当服务扩展到多机、多副本和长上下文后，KV Cache 不再只是 attention kernel 的输入，它还决定请求应该发到哪里、是否值得复用、怎样跨机器移动，以及 GPU 之外的大量内存和存储能否参与推理。

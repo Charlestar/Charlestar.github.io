@@ -4,6 +4,7 @@ import { join, relative } from 'node:path';
 const root = process.cwd();
 const postsDir = join(root, '_posts');
 const seriesFile = join(root, '_data', 'series.yml');
+const tagsFile = join(root, '_data', 'tags.yml');
 const posts = readdirSync(postsDir)
   .filter((name) => name.endsWith('.md'))
   .sort();
@@ -12,8 +13,15 @@ const warnings = [];
 const seriesText = existsSync(seriesFile) ? readFileSync(seriesFile, 'utf8') : '';
 const seriesIds = new Set([...seriesText.matchAll(/^\s*- id:\s*([a-z][a-z0-9-]+)\s*$/gm)].map(match => match[1]));
 const seriesPositions = new Map();
+const tagsText = existsSync(tagsFile) ? readFileSync(tagsFile, 'utf8') : '';
+const tagIds = new Set(
+  [...tagsText.matchAll(/^\s*- id:\s*(.+?)\s*$/gm)]
+    .map(match => match[1].trim().replace(/^['"]|['"]$/g, '')),
+);
+const tagUsage = new Map();
 
 if (!seriesIds.size) errors.push('_data/series.yml: no series definitions found');
+if (!tagIds.size) errors.push('_data/tags.yml: no tag definitions found');
 
 for (const name of posts) {
   const file = join(postsDir, name);
@@ -30,6 +38,23 @@ for (const name of posts) {
   for (const field of ['layout', 'title', 'date', 'last_modified_at', 'author', 'tags']) {
     if (!new RegExp(`^${field}:`, 'm').test(front)) {
       errors.push(`${name}: missing ${field}`);
+    }
+  }
+
+  const tagsMatch = front.match(/^tags:\s*\[([^\]]*)\]\s*$/m);
+  if (!tagsMatch) {
+    errors.push(`${name}: tags must use an inline list`);
+  } else {
+    const tags = tagsMatch[1]
+      .split(',')
+      .map(tag => tag.trim().replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean);
+    if (!tags.length) errors.push(`${name}: requires at least one tag`);
+    if (tags.length > 3) errors.push(`${name}: has ${tags.length} tags; maximum is 3`);
+    if (new Set(tags).size !== tags.length) errors.push(`${name}: contains duplicate tags`);
+    for (const tag of tags) {
+      if (!tagIds.has(tag)) errors.push(`${name}: unknown tag ${tag}`);
+      tagUsage.set(tag, (tagUsage.get(tag) ?? 0) + 1);
     }
   }
 
@@ -94,6 +119,12 @@ for (const name of posts) {
   }
 }
 
+for (const tag of tagIds) {
+  const count = tagUsage.get(tag) ?? 0;
+  if (count === 0) errors.push(`_data/tags.yml: unused tag ${tag}`);
+  else if (count === 1) errors.push(`_data/tags.yml: singleton tag ${tag}`);
+}
+
 if (warnings.length) {
   console.warn(`Content warnings (${warnings.length}):\n- ${warnings.join('\n- ')}`);
 }
@@ -102,4 +133,4 @@ if (errors.length) {
   process.exit(1);
 }
 
-console.log(`Audited ${posts.length} posts and ${seriesIds.size} series: metadata, headings, code fences, local images, and residual markers passed.`);
+console.log(`Audited ${posts.length} posts, ${seriesIds.size} series, and ${tagIds.size} tags: metadata, taxonomy, headings, code fences, local images, and residual markers passed.`);

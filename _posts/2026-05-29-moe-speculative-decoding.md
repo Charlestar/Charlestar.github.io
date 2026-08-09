@@ -10,7 +10,7 @@ series: speculative-decoding
 series_order: 60
 technology_year: 2026
 mathjax: true
-tags: [AI Infra, MoE, 推测解码, Expert Parallelism, LLM推理]
+tags: [推测解码, MoE, 专家并行]
 ---
 
 推测解码把多个候选 token 交给目标模型并行验证。对于 dense 模型，这通常是在一次权重读取中做更多计算：矩阵从一个向量乘法变成较小的矩阵乘法，硬件利用率提高，而模型权重集合没有变化。

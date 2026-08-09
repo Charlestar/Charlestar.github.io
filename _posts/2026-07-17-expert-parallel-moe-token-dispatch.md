@@ -10,7 +10,7 @@ series: moe-communication
 series_order: 20
 technology_year: 2017
 mathjax: true
-tags: [AI Infra, MoE, Expert Parallel, All-to-All, 分布式推理]
+tags: [MoE, 专家并行, 分布式推理]
 ---
 
 MoE 模型把大量 FFN 参数分散到许多 experts 中，每个 token 只激活其中少数几个。稀疏激活降低了单 token 计算量，却没有让其余专家权重从显存里消失。当一张 GPU 放不下所有 experts 时，最直接的做法是让每个 rank 只保存一部分 experts，这就是 Expert Parallel（EP）。

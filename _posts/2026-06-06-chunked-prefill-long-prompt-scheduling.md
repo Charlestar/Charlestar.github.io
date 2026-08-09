@@ -10,7 +10,7 @@ series: serving-scheduling
 series_order: 20
 technology_year: 2023
 mathjax: true
-tags: [AI Infra, LLM推理, Chunked Prefill, 调度]
+tags: [推理调度, LLM推理]
 ---
 
 Continuous Batching 让推理引擎可以在模型迭代之间移走已完成请求、接纳新请求，但它留下了一个棘手的问题：**新请求第一次进入 GPU 时，往往不是一条轻量的 decode，而是一整段 prompt 的 prefill。**

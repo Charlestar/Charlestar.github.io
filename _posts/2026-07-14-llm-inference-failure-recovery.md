@@ -10,7 +10,7 @@ series: distributed-inference
 series_order: 60
 technology_year: 2025
 mathjax: true
-tags: [AI Infra, 故障恢复, 分布式推理, KV Cache, Kubernetes]
+tags: [分布式推理, Kubernetes, LLM推理]
 ---
 
 一条流式生成请求已经输出了 127 个 token，此时负责 decode 的 GPU 进程退出。系统应该怎样处理？

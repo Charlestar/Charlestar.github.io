@@ -9,7 +9,7 @@ catalog: true
 series: kv-cache-memory
 series_order: 50
 technology_year: 2025
-tags: [AI Infra, NIXL, KV Connector, KV Cache, 分离式推理]
+tags: [分离式推理, KV Cache, 分布式推理]
 ---
 
 Prefill/Decode 分离后，一条请求会跨过两个推理实例：P worker 计算 prompt 并生成 KV Cache，D worker 接收这些 KV，再继续逐 token decode。架构图里只需要画一根从 P 到 D 的箭头，runtime 中却必须回答一串具体问题：KV 在哪几块 GPU memory 中，远端如何访问这些地址，什么时候开始传，何时确认完成，P 端何时可以释放 block，D 端又怎样把外部 KV 映射进本地 paged cache。

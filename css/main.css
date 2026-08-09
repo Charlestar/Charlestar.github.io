@@ -399,6 +399,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .topic-group-heading { display: flex; align-items: baseline; gap: 13px; margin-bottom: 13px; }
 .topic-group-heading h2 { margin: 0; font-size: 28px; letter-spacing: -0.04em; }
 .topic-group-heading span { color: var(--ink-muted); font-size: 11px; }
+.topic-description { max-width: 680px; margin: -2px 0 20px; color: var(--ink-muted); font-size: 13px; line-height: 1.7; }
 .topic-posts { border-top: 1px solid var(--line-strong); }
 .topic-posts a { display: grid; grid-template-columns: 88px 1fr auto; gap: 18px; align-items: center; padding: 16px 4px; border-bottom: 1px solid var(--line); text-decoration: none; }
 .topic-posts a:hover span, .topic-posts a:hover b { color: var(--accent); }

@@ -46,12 +46,13 @@ date: 2026-08-09
 author: 子辰
 catalog: true
 mathjax: false
-tags:
-  - AI Infra
+tags: [LLM推理, KV Cache]
 ---
 ```
 
 文章内图片统一放在 `assets/images/`，并使用 `/assets/images/...` 引用。
+
+标签从 `_data/tags.yml` 中选择，每篇使用 1–3 个；第一项应是最适合相关推荐的主主题。不要为仅一篇文章创建项目名标签，除非已有后续文章计划并能同步形成稳定专题。
 
 ## 发布
 

@@ -9,7 +9,7 @@ catalog: true
 series: serving-scheduling
 series_order: 40
 technology_year: 2026
-tags: [AI Infra, LLM推理, CUDA, 调度]
+tags: [推理调度, GPU优化, LLM推理]
 ---
 
 LLM serving 的 GPU 每执行完一个 decode step，CPU 都要处理采样结果、更新请求状态、分配 KV slot、组织下一批 metadata，再发起下一轮模型计算。如果这些动作完全串行，哪怕每轮 CPU 只停顿几毫秒，数百个输出 token 累积后也会形成明显的 GPU 空洞。

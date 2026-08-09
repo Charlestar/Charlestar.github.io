@@ -9,7 +9,7 @@ catalog: true
 series: speculative-decoding
 series_order: 30
 technology_year: 2025
-tags: [AI Infra, 推测解码, EAGLE, LLM推理]
+tags: [推测解码, EAGLE, LLM推理]
 ---
 
 推理模型的响应时间经常被两个问题同时影响：模型可能先生成很长的推理轨迹，而这些 token 又必须自回归地逐个产生。Thinking Budget 与 EAGLE-3 分别作用在这两个问题上，却很容易被混成同一种“加速”。

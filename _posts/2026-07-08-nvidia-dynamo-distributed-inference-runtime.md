@@ -10,7 +10,7 @@ series: distributed-inference
 series_order: 30
 technology_year: 2025
 mathjax: true
-tags: [AI Infra, NVIDIA Dynamo, 分布式推理, KV Cache, Kubernetes]
+tags: [分布式推理, Kubernetes, KV Cache]
 ---
 
 vLLM、SGLang 与 TensorRT-LLM 能把一组 GPU 上的模型执行得很快，但数据中心级推理还需要回答引擎之外的问题：一条请求该去哪个副本，prefill 与 decode 要不要分离，两个资源池各扩多少实例，KV Cache 在哪台 worker 上，worker 重启后怎样停止使用过期状态，以及怎样把模型服务映射到 Kubernetes 的 Pod、网络和拓扑约束。

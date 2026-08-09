@@ -9,7 +9,7 @@ catalog: true
 series: gpu-runtime-precision
 series_order: 90
 technology_year: 2026
-tags: [AI Infra, FlashInfer, GPU Kernel, Benchmark]
+tags: [GPU优化, FlashInfer]
 ---
 
 让模型写出一段能编译的 Triton 或 CUDA kernel 并不算困难。真正困难的是回答后续问题：它实现的是不是同一个算子？在 ragged sequence、非对齐 shape、FP8 和随机采样下还正确吗？快的是哪个 GPU、哪组输入？当线上请求没有匹配的实现时，系统会怎样退回已知正确路径？

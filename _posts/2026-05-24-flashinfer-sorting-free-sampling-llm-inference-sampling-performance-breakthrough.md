@@ -10,7 +10,7 @@ series: gpu-runtime-precision
 series_order: 80
 technology_year: 2026
 mathjax: true
-tags: [AI Infra, FlashInfer, LLM推理, Sampling]
+tags: [GPU优化, FlashInfer, LLM推理]
 ---
 
 大模型每生成一个 token，最后都要从词表分布中选出一个索引。Greedy decoding 只取最大值；随机生成则常先应用 temperature、top-k、top-p 或 min-p，再按剩余概率采样。

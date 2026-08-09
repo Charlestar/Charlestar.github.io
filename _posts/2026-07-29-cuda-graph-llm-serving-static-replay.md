@@ -10,7 +10,7 @@ series: gpu-runtime-precision
 series_order: 10
 technology_year: 2019
 mathjax: true
-tags: [AI Infra, CUDA Graph, LLM Serving, GPU Runtime, vLLM]
+tags: [GPU优化, vLLM, LLM推理]
 ---
 
 LLM Decode 每一步只为每条活跃 sequence 生成一个新 token，却要依次执行归一化、投影、Attention、MLP、collective、logits 与采样等许多 GPU kernels。单个 kernel 可能只运行几十微秒，CPU/Python/C++/driver 为每个 kernel 准备参数、建立依赖并发起 launch 的时间就不再可以忽略。

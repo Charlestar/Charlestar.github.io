@@ -10,7 +10,7 @@ series: serving-scheduling
 series_order: 10
 technology_year: 2022
 mathjax: true
-tags: [AI Infra, LLM推理, Continuous Batching, 调度]
+tags: [推理调度, LLM推理]
 ---
 
 把多个请求组成 batch，是提高 GPU 利用率最常见的办法。但语言模型的生成请求有一个特殊之处：模型执行一次通常只产生下一个 token，而不同请求要生成的 token 数又不相同。

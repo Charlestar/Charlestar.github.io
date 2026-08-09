@@ -10,7 +10,7 @@ series: moe-communication
 series_order: 50
 technology_year: 2025
 mathjax: true
-tags: [AI Infra, MoE, Wide EP, Expert Parallel, 分布式推理]
+tags: [MoE, 专家并行, 分布式推理]
 ---
 
 常规 Expert Parallel 可能只在单台 8-GPU 节点内分配 experts。随着 MoE 总参数、expert 数和在线吞吐增长，EP group 会扩展到多个节点、几十甚至上百张 GPU。这里把这种大规模、跨节点的 Expert Parallel 部署称为 **Wide EP**。

@@ -10,7 +10,7 @@ series: distributed-inference
 series_order: 10
 technology_year: 2024
 mathjax: true
-tags: [AI Infra, DistServe, 分离式推理, Goodput, LLM推理]
+tags: [分离式推理, 分布式推理, LLM推理]
 ---
 
 同一个 Decoder-only Transformer，在 prefill 和 decode 阶段表现得像两类不同服务。Prefill 一次处理整段 prompt，矩阵大、并行度高，主要决定首 token 何时出现；decode 每轮只推进一个位置，反复读取模型权重与历史 KV Cache，主要决定后续 token 是否平滑输出。

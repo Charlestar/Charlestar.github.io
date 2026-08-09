@@ -10,7 +10,7 @@ series: kv-cache-memory
 series_order: 60
 technology_year: 2026
 mathjax: true
-tags: [AI Infra, LLM推理, KV Cache, NVFP4, Blackwell, 量化]
+tags: [模型量化, KV Cache, LLM推理]
 ---
 
 KV Cache 是用显存换计算：每生成一个 token，模型把它在各层产生的 Key 和 Value 保存下来；下一步只计算新 token，再读取历史 K/V 完成 attention。上下文越长、并发越高，省下的重复计算越多，驻留在显存中的状态也越大。

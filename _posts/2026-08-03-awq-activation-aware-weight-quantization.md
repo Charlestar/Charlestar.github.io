@@ -10,7 +10,7 @@ series: gpu-runtime-precision
 series_order: 50
 technology_year: 2023
 mathjax: true
-tags: [AI Infra, AWQ, 量化, W4A16, LLM Serving]
+tags: [模型量化, GPU优化, LLM推理]
 ---
 
 把 LLM 权重从 BF16 压到 4-bit，最直观的方法是按一组权重的最大绝对值确定 scale，再四舍五入到有限整数范围。模型体积确实缩小了，但少数对输出非常重要的权重可能被粗糙量化，误差沿几十层传播后明显损害生成质量。

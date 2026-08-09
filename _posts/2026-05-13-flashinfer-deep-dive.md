@@ -10,7 +10,7 @@ series: gpu-runtime-precision
 series_order: 70
 technology_year: 2025
 mathjax: true
-tags: [AI Infra, FlashInfer, CUDA, LLM推理]
+tags: [GPU优化, FlashInfer, LLM推理]
 ---
 
 FlashAttention 证明了改变数据搬运方式可以显著加速精确注意力，但 LLM serving 面对的问题比一组规则的 $Q、K、V$ 更复杂：每个请求长度不同，KV Cache 分散在页中，batch 每轮变化，prefill 与 decode 的 Query 长度也完全不同，还可能同时出现 GQA、MLA、低精度缓存、滑动窗口和自定义 mask。

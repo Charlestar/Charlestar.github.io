@@ -9,7 +9,7 @@ catalog: true
 series: serving-scheduling
 series_order: 30
 technology_year: 2025
-tags: [AI Infra, vLLM, EngineCore, LLM推理]
+tags: [推理调度, vLLM, LLM推理]
 ---
 
 一个 OpenAI-compatible 推理服务同时承担两类节奏完全不同的工作。

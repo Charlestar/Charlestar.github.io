@@ -14,19 +14,25 @@ permalink: /tags/
 
 <div class="shell narrow-shell topics-page">
   <nav class="tag-cloud" aria-label="全部标签">
-    {% for tag in site.tags %}
-    <a href="#{{ tag[0] | url_encode }}"><span>{{ tag[0] }}</span><small>{{ tag[1].size }}</small></a>
+    {% for tag_meta in site.data.tags %}
+    {% assign tag_posts = site.tags[tag_meta.id] %}
+    {% if tag_posts and tag_posts.size > 0 %}
+    <a href="#{{ tag_meta.id | url_encode }}"><span>{{ tag_meta.id }}</span><small>{{ tag_posts.size }}</small></a>
+    {% endif %}
     {% endfor %}
   </nav>
 
   <div class="topic-groups">
-    {% for tag in site.tags %}
-    <section class="topic-group" id="{{ tag[0] }}">
+    {% for tag_meta in site.data.tags %}
+    {% assign tag_posts = site.tags[tag_meta.id] %}
+    {% if tag_posts and tag_posts.size > 0 %}
+    <section class="topic-group" id="{{ tag_meta.id }}">
       <div class="topic-group-heading">
-        <h2>{{ tag[0] }}</h2><span>{{ tag[1].size }} 篇</span>
+        <h2>{{ tag_meta.id }}</h2><span>{{ tag_posts.size }} 篇</span>
       </div>
+      <p class="topic-description">{{ tag_meta.description }}</p>
       <div class="topic-posts">
-        {% for post in tag[1] %}
+        {% for post in tag_posts %}
         <a href="{{ post.url | relative_url }}">
           <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: '%Y.%m.%d' }}</time>
           <span>{{ post.title }}</span>
@@ -35,6 +41,7 @@ permalink: /tags/
         {% endfor %}
       </div>
     </section>
+    {% endif %}
     {% endfor %}
   </div>
 </div>

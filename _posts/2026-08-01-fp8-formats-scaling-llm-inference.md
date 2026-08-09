@@ -10,7 +10,7 @@ series: gpu-runtime-precision
 series_order: 30
 technology_year: 2022
 mathjax: true
-tags: [AI Infra, FP8, E4M3, Tensor Core, LLM Serving]
+tags: [模型量化, GPU优化, LLM推理]
 ---
 
 “这个模型是 FP8”可能表达五种不同事实：checkpoint 权重以 FP8 保存、加载时把 BF16 权重转成 FP8、线性层同时使用 FP8 权重和 activation、KV Cache 以 FP8 存储，或者跨 GPU activation 以 FP8 传输。它们节省的资源、需要的 scale、数值风险和硬件 kernel 完全不同。

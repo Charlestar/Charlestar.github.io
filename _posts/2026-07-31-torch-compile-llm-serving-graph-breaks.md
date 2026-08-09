@@ -10,7 +10,7 @@ series: gpu-runtime-precision
 series_order: 20
 technology_year: 2022
 mathjax: true
-tags: [AI Infra, torch.compile, TorchDynamo, TorchInductor, LLM Serving]
+tags: [GPU优化, LLM推理]
 ---
 
 PyTorch eager mode 每执行一行 tensor 运算，就经过 Python、operator dispatcher、C++ 和 CUDA kernel launch。它让模型代码容易调试和扩展，却把原本可以合并的算子隔成许多独立步骤：

@@ -10,7 +10,7 @@ series: attention-long-context
 series_order: 40
 technology_year: 2023
 mathjax: true
-tags: [AI Infra, Ring Attention, 长上下文, 分布式训练]
+tags: [注意力机制, 分布式训练]
 ---
 
 FlashAttention 让单张 GPU 不再物化完整的 $N\times N$ attention matrix，但一条足够长的序列仍然可能放不进单卡。

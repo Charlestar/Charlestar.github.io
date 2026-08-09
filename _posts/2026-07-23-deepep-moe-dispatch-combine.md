@@ -10,7 +10,7 @@ series: moe-communication
 series_order: 40
 technology_year: 2025
 mathjax: true
-tags: [AI Infra, MoE, DeepEP, Expert Parallel, RDMA]
+tags: [MoE, 专家并行, 分布式推理]
 ---
 
 Expert Parallel 把不同 experts 放在不同 GPU 上。Router 选出 Top-$k$ experts 后，token hidden states 先通过 dispatch 到达 expert owner；expert GEMM 完成后，输出再通过 combine 回到 source rank。这个过程看起来像两次 All-to-All，但直接调用一个通用 collective，通常只能解决“数据最终到达”，不能同时解决 MoE 真正关心的几件事：

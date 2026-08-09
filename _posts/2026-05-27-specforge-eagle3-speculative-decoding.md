@@ -9,7 +9,7 @@ catalog: true
 series: speculative-decoding
 series_order: 40
 technology_year: 2025
-tags: [AI Infra, SGLang, SpecForge, EAGLE3, 推测解码]
+tags: [推测解码, EAGLE, SGLang]
 ---
 
 推测解码常被概括为“用小模型猜、用大模型验”。这个说法解释了运行时，却没有说明草稿模型如何得到。

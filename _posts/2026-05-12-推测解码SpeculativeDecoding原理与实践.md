@@ -10,7 +10,7 @@ series: speculative-decoding
 series_order: 10
 technology_year: 2023
 mathjax: true
-tags: [AI Infra, 推测解码, LLM推理]
+tags: [推测解码, LLM推理]
 ---
 
 自回归模型生成第 $t+1$ 个 token 之前，必须先知道第 $t$ 个 token。生成 100 个 token，目标模型通常要串行执行约 100 轮；每轮都读取大量权重，却只为很少的新位置计算，尤其在低并发 decode 中容易受显存带宽和 kernel 启动开销限制。

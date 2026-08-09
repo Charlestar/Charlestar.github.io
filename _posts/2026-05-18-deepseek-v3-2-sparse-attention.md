@@ -10,7 +10,7 @@ series: attention-long-context
 series_order: 70
 technology_year: 2025
 mathjax: true
-tags: [AI Infra, LLM推理, 稀疏注意力]
+tags: [注意力机制, KV Cache, LLM推理]
 ---
 
 长上下文让模型能够阅读完整代码库、长文档和多轮代理轨迹，也让 attention 成为越来越显眼的计算瓶颈。对长度为 $L$ 的序列，dense causal attention 需要考虑约 $L(L+1)/2$ 个 query-key 关系；序列翻倍，关系数量接近四倍。

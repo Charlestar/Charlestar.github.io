@@ -10,7 +10,7 @@ series: gpu-runtime-precision
 series_order: 40
 technology_year: 2022
 mathjax: true
-tags: [AI Infra, SmoothQuant, W8A8, INT8, LLM Serving]
+tags: [模型量化, GPU优化, LLM推理]
 ---
 
 INT8 矩阵乘已经在 GPU 和 CPU 上存在多年，为什么大语言模型直到 SmoothQuant 之后才更容易稳定地使用 W8A8？障碍通常不在 weight，而在 activation。

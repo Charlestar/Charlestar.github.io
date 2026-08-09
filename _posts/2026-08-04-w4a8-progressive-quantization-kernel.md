@@ -10,7 +10,7 @@ series: gpu-runtime-precision
 series_order: 60
 technology_year: 2024
 mathjax: true
-tags: [AI Infra, W4A8, QServe, INT4, INT8, LLM Serving]
+tags: [模型量化, GPU优化, LLM推理]
 ---
 
 W4A16 与 W8A8 各自只解决了一半问题。W4A16 把 weight 压到 4-bit，适合降低小 batch Decode 的权重带宽，却要在计算前恢复到 FP16/BF16；W8A8 可以直接利用 INT8 Tensor Core，但 weight 容量和带宽仍是 8-bit。W4A8 看起来正好取两者之长：4-bit weight storage，加上 8-bit activation 与高吞吐矩阵乘。

@@ -10,7 +10,7 @@ series: distributed-training
 series_order: 10
 technology_year: 2019
 mathjax: true
-tags: [AI Infra, Distributed Training, ZeRO, FSDP, Data Parallel]
+tags: [分布式训练]
 ---
 
 把训练从一张 GPU 扩到八张，最直接的方法是让每张卡保存完整模型、读取不同数据，再同步梯度。这种 Data Parallel 提高了吞吐，却没有让单卡少放任何模型状态：parameters、gradients 和 optimizer states 仍被复制八份。模型越大，GPU 数量增加得越多，这种冗余越显眼。

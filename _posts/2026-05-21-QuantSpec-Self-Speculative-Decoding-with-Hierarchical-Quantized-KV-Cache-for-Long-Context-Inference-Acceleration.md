@@ -10,7 +10,7 @@ series: speculative-decoding
 series_order: 50
 technology_year: 2026
 mathjax: true
-tags: [AI Infra, 推测解码, KV Cache, 量化]
+tags: [推测解码, KV Cache, 模型量化]
 ---
 
 推测解码通常让一个小模型连续提出多个 token，再由目标模型一次并行验证。只要草稿便宜、接受率又足够高，一次昂贵的目标模型前向就能提交多个 token。

@@ -10,7 +10,7 @@ series: attention-long-context
 series_order: 30
 technology_year: 2023
 mathjax: true
-tags: [AI Infra, FlashAttention, GPU Kernel, CUDA]
+tags: [注意力机制, FlashAttention, GPU优化]
 ---
 
 第一代 FlashAttention 已经解决了精确注意力最显眼的 IO 问题：它不再把完整的 $N\times N$ score 和 probability 矩阵写回 HBM，而是分块读取 $Q、K、V$，在片上完成在线 Softmax 和输出累积。

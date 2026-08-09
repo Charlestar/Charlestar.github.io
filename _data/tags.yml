@@ -1,0 +1,48 @@
+- id: LLM推理
+  description: 模型推理引擎、执行路径与线上性能。
+- id: KV Cache
+  description: 自回归状态的存储、复用、迁移与压缩。
+- id: 推理调度
+  description: 批处理、排队、公平性与运行时执行。
+- id: 分布式推理
+  description: 多实例、多节点与云原生推理系统。
+- id: 分离式推理
+  description: Prefill/Decode 解耦与 KV 数据面。
+- id: 注意力机制
+  description: Attention 架构、长上下文与执行优化。
+- id: 推测解码
+  description: Draft、验证、接受率与系统协同。
+- id: GPU优化
+  description: Kernel、编译、执行图与硬件利用率。
+- id: 模型量化
+  description: 权重、Activation 与 KV Cache 的低精度路径。
+- id: MoE
+  description: 稀疏专家模型的路由、计算与部署。
+- id: 专家并行
+  description: Expert ownership、Token Dispatch 与负载均衡。
+- id: 分布式训练
+  description: 状态分片与层内模型并行。
+- id: Kubernetes
+  description: 容器编排、资源调度与故障恢复。
+- id: vLLM
+  description: vLLM 的缓存、调度与执行架构。
+- id: SGLang
+  description: SGLang 的缓存、推测解码与运行时。
+- id: FlashInfer
+  description: Serving GPU primitives、采样与评测。
+- id: FlashAttention
+  description: IO-aware Attention Kernel 的持续演进。
+- id: EAGLE
+  description: Feature-level speculative decoding 及其训练交付。
+- id: 推荐系统
+  description: 召回、排序、特征与行为序列建模。
+- id: 机器学习
+  description: 机器学习模型、算法与研究进展。
+- id: 计算机视觉
+  description: 视觉算法与生成模型。
+- id: 编程基础
+  description: 语言机制、数据结构与基础知识。
+- id: C/C++
+  description: C/C++ 语言与底层编程。
+- id: 工程实践
+  description: 工具、环境、工作流与经验记录。

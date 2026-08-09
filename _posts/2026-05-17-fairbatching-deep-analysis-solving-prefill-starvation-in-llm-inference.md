@@ -10,7 +10,7 @@ series: serving-scheduling
 series_order: 50
 technology_year: 2026
 mathjax: true
-tags: [AI Infra, LLM推理, 调度]
+tags: [推理调度, LLM推理]
 ---
 
 在线大模型服务中的“公平”，并不是把一半 GPU 时间留给 prefill、另一半留给 decode。两类任务的工作形态不同，用户对它们的等待预期也不同：新请求希望尽快看到第一个 token，正在生成的请求则希望后续 token 连续到达。

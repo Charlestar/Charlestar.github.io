@@ -9,7 +9,7 @@ catalog: true
 series: model-serving-agents
 series_order: 40
 technology_year: 2025
-tags: [AI Agent, LangGraph, MCP]
+tags: [工程实践]
 ---
 
 让模型调用一次搜索工具并不难：把工具描述交给模型，解析 tool call，执行函数，再把结果放回上下文即可。真正困难的是第二天仍能恢复这项任务、工具超时后不会重复写数据、并行分支能正确合并，以及高风险动作会停下来等待审批。

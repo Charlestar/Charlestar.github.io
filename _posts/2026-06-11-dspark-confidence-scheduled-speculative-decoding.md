@@ -10,7 +10,7 @@ series: speculative-decoding
 series_order: 70
 technology_year: 2026
 mathjax: true
-tags: [AI Infra, SGLang, DSpark, 推测解码, LLM推理]
+tags: [推测解码, SGLang, LLM推理]
 ---
 
 推测解码有一个很容易被忽略的转折点：低并发时，多验证几个候选 token 可能几乎不增加延迟；并发升高后，同样的候选会占用本可服务其他请求的计算槽位。

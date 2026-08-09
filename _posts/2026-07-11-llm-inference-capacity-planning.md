@@ -10,7 +10,7 @@ series: distributed-inference
 series_order: 50
 technology_year: 2025
 mathjax: true
-tags: [AI Infra, 容量规划, Goodput, KV Cache, 分布式推理]
+tags: [分布式推理, 推理调度, LLM推理]
 ---
 
 “一张 GPU 每秒能生成多少 token”不能直接回答线上需要多少 GPU。相同 tokens/s 的两个 workload，可能一个由短 prompt、长输出构成，另一个由超长 prompt、短回答构成；前者持续占用 decode KV 和 memory bandwidth，后者集中消耗 prefill compute。再加入 prefix cache、请求 burst、P99 SLO、模型并行与 worker 冷启动，单个峰值吞吐很快失去解释力。

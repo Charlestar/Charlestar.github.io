@@ -10,7 +10,7 @@ series: kv-cache-memory
 series_order: 30
 technology_year: 2023
 mathjax: true
-tags: [AI Infra, SGLang, RadixAttention, KV Cache]
+tags: [KV Cache, SGLang, LLM推理]
 ---
 
 许多 LLM 应用会反复计算相同的 prompt 前缀。客服请求都带着同一套服务规则；RAG 用户围绕同一篇文档连续提问；Agent 的每次模型调用都可能附带相同的工具定义。对模型来说，这些前缀一旦 token 完全相同，对应的 KV Cache 也相同，重复 prefill 是可以避免的。

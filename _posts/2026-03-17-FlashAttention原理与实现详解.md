@@ -10,7 +10,7 @@ series: attention-long-context
 series_order: 10
 technology_year: 2022
 mathjax: true
-tags: [AI Infra, LLM推理, 注意力机制]
+tags: [注意力机制, FlashAttention, GPU优化]
 ---
 
 FlashAttention 最容易被误解的地方，是它看起来并没有少算什么：输入仍然是 $Q、K、V$，输出仍然等于标准的 scaled dot-product attention，稠密注意力的算术复杂度也仍是二次方。既然公式没变，它为什么能更快、还更省显存？

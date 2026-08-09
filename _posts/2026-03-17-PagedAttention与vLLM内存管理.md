@@ -10,7 +10,7 @@ series: kv-cache-memory
 series_order: 20
 technology_year: 2023
 mathjax: true
-tags: [AI Infra, LLM推理, KV Cache, vLLM]
+tags: [KV Cache, vLLM, LLM推理]
 ---
 
 LLM 服务很难提前知道一次请求最终会占用多少 KV Cache。用户可能只生成一句话，也可能持续输出几千个 token；不同请求又在不同时间到达和结束。如果为每个请求一次性预留最大长度，显存会被大量空槽占据；如果按实际长度反复寻找连续空间，则会出现碎片、搬移和扩容问题。

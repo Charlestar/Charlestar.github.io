@@ -10,7 +10,7 @@ series: serving-scheduling
 series_order: 60
 technology_year: 2026
 mathjax: true
-tags: [AI Infra, vLLM, LLM推理, GPU优化]
+tags: [推理调度, vLLM, GPU优化]
 ---
 
 在一次 vLLM engine step 中，Scheduler 只决定“每个请求推进多少 token、使用哪些 KV block”。这些逻辑状态还不能直接交给模型。GPU ModelRunner 必须把它们变成连续 tensor：`input_ids`、`positions`、block table、sequence length、query start offset、sampling 参数与 CUDA Graph 所需的 padded batch。

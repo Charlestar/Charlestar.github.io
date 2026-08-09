@@ -10,7 +10,7 @@ series: kv-cache-memory
 series_order: 10
 technology_year: 2017
 mathjax: true
-tags: [AI Infra, KV Cache, LLM推理, Attention]
+tags: [KV Cache, LLM推理]
 ---
 
 大语言模型生成一个 token 后，会把它追加到已有序列，再运行一次模型生成下一个 token。如果每一轮都重新计算整个前缀，已经处理过的 token 会被反复投影成 Key 和 Value，解码长度越长，浪费越严重。

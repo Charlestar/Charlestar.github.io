@@ -10,7 +10,7 @@ series: attention-long-context
 series_order: 50
 technology_year: 2024
 mathjax: true
-tags: [AI Infra, MLA, DeepSeek, KV Cache, FlashMLA, LLM Serving]
+tags: [注意力机制, KV Cache, LLM推理]
 ---
 
 自回归生成每次只产生一个新 token，却要让它关注此前所有 token。为了避免重复计算历史 Key 和 Value，推理引擎会为每层保存 KV Cache。上下文越长、并发越高，这份缓存越容易成为显存容量和 Decode 带宽的主要成本。

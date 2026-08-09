@@ -98,15 +98,17 @@ search: true
       </div>
     </div>
 
-    <div class="sidebar-card">
-      <div class="sidebar-heading"><span>热门主题</span><a href="{{ '/tags/' | relative_url }}">全部 →</a></div>
-      <div class="topic-list">
-        {% assign sorted_tags = site.tags | sort %}
-        {% for tag in sorted_tags limit: 10 %}
-        <a href="{{ '/tags/' | relative_url }}#{{ tag[0] | url_encode }}"><span>{{ tag[0] }}</span><small>{{ tag[1].size }}</small></a>
-        {% endfor %}
+      <div class="sidebar-card">
+        <div class="sidebar-heading"><span>核心主题</span><a href="{{ '/tags/' | relative_url }}">全部 →</a></div>
+        <div class="topic-list">
+          {% for tag_meta in site.data.tags limit: 10 %}
+          {% assign tag_posts = site.tags[tag_meta.id] %}
+          {% if tag_posts and tag_posts.size > 0 %}
+          <a href="{{ '/tags/' | relative_url }}#{{ tag_meta.id | url_encode }}"><span>{{ tag_meta.id }}</span><small>{{ tag_posts.size }}</small></a>
+          {% endif %}
+          {% endfor %}
+        </div>
       </div>
-    </div>
 
     <div class="sidebar-card profile-card">
       <img src="{{ '/img/about-ZZC.jpg' | relative_url }}" alt="{{ site.author.name }}" loading="lazy">

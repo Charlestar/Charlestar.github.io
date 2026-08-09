@@ -10,7 +10,7 @@ series: attention-long-context
 series_order: 60
 technology_year: 2024
 mathjax: true
-tags: [AI Infra, FlashAttention, Hopper, FP8]
+tags: [注意力机制, FlashAttention, GPU优化]
 ---
 
 FlashAttention-2 在 A100 上通过更好的 thread-block 并行与 warp 工作划分，把精确注意力推进到接近高性能 GEMM 的利用率。但把同一套执行方式搬到 H100，并不会自动吃到新硬件的峰值。

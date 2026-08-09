@@ -10,7 +10,7 @@ series: distributed-training
 series_order: 20
 technology_year: 2019
 mathjax: true
-tags: [AI Infra, Tensor Parallel, Megatron-LM, Distributed Training, NCCL]
+tags: [分布式训练, GPU优化]
 ---
 
 Data Parallel 把 batch 分给不同 GPU，每张卡仍执行完整模型；ZeRO/FSDP 再把模型状态沿 Data Parallel ranks 分片，但一个 layer 真正计算时仍需要临时聚合其完整参数。若单个 Transformer layer 太大，或一次矩阵乘本身就希望由多张 GPU 共同完成，就需要切开 layer 内部的 tensors。
