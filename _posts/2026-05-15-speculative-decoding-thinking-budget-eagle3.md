@@ -3,12 +3,13 @@ layout: post
 title: "推理模型的推测解码：Thinking Budget 与 EAGLE-3"
 subtitle: "把生成工作量与执行效率分开优化"
 date: 2026-05-15 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: speculative-decoding
 series_order: 30
 technology_year: 2025
+mathjax: true
 tags: [推测解码, EAGLE, LLM推理]
 ---
 
@@ -88,13 +89,12 @@ $O$ 是最终答案 token。调小 $B$ 可能降低 $R$，从而减少 decode �
 两个预算可以画成二维坐标：
 
 ```text
-                    speculative budget K
-                         small ─────► large
-thinking budget B   ┌─────────────────────────┐
-small               │ 少想 + 短草稿 │ 少想 + 宽验证 │
-                    ├───────────────┼─────────┤
-large               │ 多想 + 短草稿 │ 多想 + 宽验证 │
-                    └─────────────────────────┘
+                         speculative budget K
+                              small ─────► large
+                        ┌────────────────┬────────────────┐
+thinking budget B small │ 少想 + 短草稿  │ 少想 + 宽验证  │
+                  large │ 多想 + 短草稿  │ 多想 + 宽验证  │
+                        └────────────────┴────────────────┘
 ```
 
 横向比较应保持目标模型输出策略相同，判断执行是否变快；纵向比较允许质量变化，用来选择任务预算。把左上和右下直接比较，无法知道收益来自哪一维。

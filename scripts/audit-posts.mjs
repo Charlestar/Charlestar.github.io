@@ -20,6 +20,44 @@ const tagIds = new Set(
 );
 const tagUsage = new Map();
 
+function stripInlineCodeSpans(line) {
+  return line.replace(/(`+)(.*?)\1/g, '');
+}
+
+function isEscaped(text, index) {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
+function inspectMathDelimiters(line) {
+  let doubleDollars = 0;
+  let singleDollars = 0;
+  let texOpener = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    if (
+      line[index] === '\\' &&
+      !isEscaped(line, index) &&
+      (line[index + 1] === '(' || line[index + 1] === '[')
+    ) {
+      texOpener = true;
+    }
+
+    if (line[index] !== '$' || isEscaped(line, index)) continue;
+    if (line[index + 1] === '$') {
+      doubleDollars += 1;
+      index += 1;
+    } else {
+      singleDollars += 1;
+    }
+  }
+
+  return { doubleDollars, singleDollars, texOpener };
+}
+
 if (!seriesIds.size) errors.push('_data/series.yml: no series definitions found');
 if (!tagIds.size) errors.push('_data/tags.yml: no tag definitions found');
 
@@ -77,15 +115,54 @@ for (const name of posts) {
     errors.push(`${name}: series_order and technology_year require series`);
   }
 
-  let inFence = false;
+  for (const match of text.matchAll(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]|\r(?!\n)/g)) {
+    const lineNumber = text.slice(0, match.index).split(/\r?\n/).length;
+    const codePoint = match[0].codePointAt(0).toString(16).toUpperCase().padStart(2, '0');
+    errors.push(`${name}:${lineNumber}: contains control character U+${codePoint}`);
+  }
+
+  let fenceMarker = null;
+  let fenceLength = 0;
+  let displayMathStart = null;
+  let hasMathSyntax = false;
   const headings = new Map();
   for (let index = secondDelimiter + 1; index < lines.length; index += 1) {
     const line = lines[index];
-    if (/^\s*```/.test(line)) {
-      inFence = !inFence;
+    if (fenceMarker) {
+      const closingFence = line.match(/^\s{0,3}(`+|~+)\s*$/);
+      if (
+        closingFence &&
+        closingFence[1][0] === fenceMarker &&
+        closingFence[1].length >= fenceLength
+      ) {
+        fenceMarker = null;
+        fenceLength = 0;
+      }
       continue;
     }
-    if (inFence) continue;
+
+    const openingFence = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (openingFence) {
+      fenceMarker = openingFence[1][0];
+      fenceLength = openingFence[1].length;
+      continue;
+    }
+
+    const proseLine = stripInlineCodeSpans(line);
+    if (/^\s*\\(?:\[|\])\s*$/.test(proseLine)) {
+      errors.push(`${name}:${index + 1}: standalone \\[ or \\] is not rendered as display math by kramdown; use $$`);
+    }
+    const mathDelimiters = inspectMathDelimiters(proseLine);
+    if (
+      mathDelimiters.doubleDollars > 0 ||
+      mathDelimiters.singleDollars >= 2 ||
+      mathDelimiters.texOpener
+    ) {
+      hasMathSyntax = true;
+    }
+    if (mathDelimiters.doubleDollars % 2 === 1) {
+      displayMathStart = displayMathStart === null ? index + 1 : null;
+    }
 
     const heading = line.match(/^(#{1,6})\s+(.+?)\s*$/);
     if (!heading) continue;
@@ -99,7 +176,11 @@ for (const name of posts) {
       headings.set(key, index + 1);
     }
   }
-  if (inFence) errors.push(`${name}: unclosed fenced code block`);
+  if (fenceMarker) errors.push(`${name}: unclosed fenced code block`);
+  if (displayMathStart !== null) errors.push(`${name}:${displayMathStart}: unclosed $$ display math block`);
+  if (hasMathSyntax && !/^mathjax:\s*true\s*$/m.test(front)) {
+    errors.push(`${name}: math syntax requires mathjax: true`);
+  }
 
   for (const match of text.matchAll(/!\[[^\]]*\]\((\/[^)\s]+)(?:\s+"[^"]*")?\)/g)) {
     const localPath = decodeURIComponent(match[1]).replace(/^\//, '');
@@ -133,4 +214,4 @@ if (errors.length) {
   process.exit(1);
 }
 
-console.log(`Audited ${posts.length} posts, ${seriesIds.size} series, and ${tagIds.size} tags: metadata, taxonomy, headings, code fences, local images, and residual markers passed.`);
+console.log(`Audited ${posts.length} posts, ${seriesIds.size} series, and ${tagIds.size} tags: metadata, taxonomy, headings, code/math fences, control characters, local images, and residual markers passed.`);

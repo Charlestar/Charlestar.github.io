@@ -3,7 +3,7 @@ layout: post
 title: "vLLM Model Runner V2：GPU-native 与 async-first 的执行核心"
 subtitle: "从稳定状态表到无 CPU 同步的 CUDA Stream"
 date: 2026-05-25 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -279,12 +279,12 @@ $$
 而：
 
 $$
-g_i=-\log(-\log u_i),qquad u_i\sim Uniform(0,1)
+g_i=-\log(-\log u_i),\qquad u_i\sim Uniform(0,1)
 $$
 
 这样不需要显式 materialize softmax 概率再调用 multinomial。Triton kernel 从 seed/counter 生成 stateless random number，叠加 logits 后做 reduction。
 
-数值精度仍很重要：低精度 Gumbel noise 可能改变概率，尤其在大词表与接近 logits 中。当前 release notes 仍持续记录 FP32 Gumbel accuracy 修复，说明“GPU-native”不能以分布偏差换速度。
+数值精度仍很重要：低精度 Gumbel noise 可能改变概率，尤其是在词表很大，或多个候选 token 的 logits 数值接近时。当前 release notes 仍持续记录 FP32 Gumbel accuracy 修复，说明“GPU-native”不能以分布偏差换速度。
 
 ### Top-k logprobs 不应物化整个词表
 

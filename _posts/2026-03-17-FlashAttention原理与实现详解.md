@@ -3,7 +3,7 @@ layout: post
 title: "FlashAttention：IO-aware 的精确注意力"
 subtitle: "从在线 Softmax 到 GPU 分块流水线"
 date: 2026-03-17
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: attention-long-context
@@ -13,7 +13,7 @@ mathjax: true
 tags: [注意力机制, FlashAttention, GPU优化]
 ---
 
-FlashAttention 最容易被误解的地方，是它看起来并没有少算什么：输入仍然是 $Q、K、V$，输出仍然等于标准的 scaled dot-product attention，稠密注意力的算术复杂度也仍是二次方。既然公式没变，它为什么能更快、还更省显存？
+FlashAttention 最容易被误解的地方，是它看起来并没有少算什么：输入仍然是 $Q, K, V$，输出仍然等于标准的 scaled dot-product attention，稠密注意力的算术复杂度也仍是二次方。既然公式没变，它为什么能更快、还更省显存？
 
 答案不在公式本身，而在数据如何经过 GPU。朴素实现把一个巨大的中间矩阵写入显存，再读回来做 Softmax 和后续矩阵乘法；FlashAttention 改变计算顺序，让一个数据块在更快的片上存储中完成尽可能多的工作，并避免物化完整注意力矩阵。它优化的是 **IO 路径**，不是把精确注意力换成近似算法。
 
@@ -66,7 +66,7 @@ FlashAttention 的思路类似在厨房里一次取来本轮需要的食材，�
 
 具体做法是：
 
-1. 将 $Q$ 按行分块，将 $K、V$ 按序列维分块；
+1. 将 $Q$ 按行分块，将 $K, V$ 按序列维分块；
 2. 把当前块搬入 SRAM/shared memory 或寄存器；
 3. 计算局部 score、Softmax 统计量和输出累积；
 4. 只把最终输出与少量归一化信息写回 HBM。
@@ -207,7 +207,7 @@ $$
 
 LLM 推理分为两个形状差异很大的阶段。
 
-**Prefill** 一次处理提示词中的许多 Query，$Q、K、V$ 都较长，矩阵规模足以发挥 Tensor Core 与 tiling 的效率，避免 $N^2$ 中间张量也非常重要。
+**Prefill** 一次处理提示词中的许多 Query，$Q, K, V$ 都较长，矩阵规模足以发挥 Tensor Core 与 tiling 的效率，避免 $N^2$ 中间张量也非常重要。
 
 **Decode** 每轮通常只产生一个新 Query，却要读取全部历史 KV Cache。单请求的 $Q$ 很短，问题更偏向内存带宽和并行度不足。Serving 引擎会通过 continuous batching，把多个请求组织在一起，并可能选择 paged、split-KV 等专用 decode kernel。
 

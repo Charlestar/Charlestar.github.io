@@ -3,7 +3,7 @@ layout: post
 title: "FlashAttention-2：从 IO-aware 到更好的并行划分"
 subtitle: "为什么同一个精确注意力算法，还能通过 Thread Block 与 Warp 重排再快一倍"
 date: 2026-06-14 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: attention-long-context
@@ -13,7 +13,7 @@ mathjax: true
 tags: [注意力机制, FlashAttention, GPU优化]
 ---
 
-第一代 FlashAttention 已经解决了精确注意力最显眼的 IO 问题：它不再把完整的 $N\times N$ score 和 probability 矩阵写回 HBM，而是分块读取 $Q、K、V$，在片上完成在线 Softmax 和输出累积。
+第一代 FlashAttention 已经解决了精确注意力最显眼的 IO 问题：它不再把完整的 $N\times N$ score 和 probability 矩阵写回 HBM，而是分块读取 $Q, K, V$，在片上完成在线 Softmax 和输出累积。
 
 算法没有近似，额外显存从二次规模降到线性规模，速度也明显超过物化 attention matrix 的实现。但在 A100 上，它的实际计算吞吐仍显著落后于优化良好的 GEMM。
 
@@ -37,7 +37,7 @@ block 层：能启动多少 thread blocks，occupancy 是否足够
 warp 层：寄存器、shared memory、同步与数据交换是否高效
 ```
 
-第一代 FlashAttention 主要改变数据流：让 $Q、K、V$ 的 tile 在 SRAM/寄存器中尽可能完成 $QK^T$、Softmax 和 $PV$，从而避免巨大的 HBM 往返。
+第一代 FlashAttention 主要改变数据流：让 $Q, K, V$ 的 tile 在 SRAM/寄存器中尽可能完成 $QK^T$、Softmax 和 $PV$，从而避免巨大的 HBM 往返。
 
 但一个 tile 放进片上之后，仍要回答：
 

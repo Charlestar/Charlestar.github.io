@@ -3,7 +3,7 @@ layout: post
 title: "EAGLE：为什么推测解码要预测 Feature"
 subtitle: "从 Feature Uncertainty、Advanced Token 到树形草稿与无损验证"
 date: 2026-06-09 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -240,7 +240,7 @@ $$
 若二者维度都是 $d$，拼接结果是 $2d$。一个全连接层把它压回目标 hidden size：
 
 $$
-h_j=Wz_j+b,qquad h_j\in\mathbb{R}^d
+h_j=Wz_j+b,\qquad h_j\in\mathbb{R}^d
 $$
 
 它把“目标模型已经理解出的上下文”和“这一步实际选择的离散分支”融合到同一个表示中。

@@ -3,12 +3,13 @@ layout: post
 title: "FlashInfer-Bench：AI 生成 GPU Kernel 的评测与上线边界"
 subtitle: "从算子契约、真实 Workload 到运行时替换"
 date: 2026-05-22 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: gpu-runtime-precision
 series_order: 90
 technology_year: 2026
+mathjax: true
 tags: [GPU优化, FlashInfer]
 ---
 

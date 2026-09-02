@@ -3,12 +3,13 @@ layout: post
 title: "vLLM V1 EngineCore：引擎进程与执行核心的解耦"
 subtitle: "沿一次请求理解 Client、Scheduler、KV Cache 与 GPU Worker"
 date: 2026-05-23 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: serving-scheduling
 series_order: 30
 technology_year: 2025
+mathjax: true
 tags: [推理调度, vLLM, LLM推理]
 ---
 

@@ -3,12 +3,13 @@ layout: post
 title: "NIXL 与 KV Connector：把推理引擎和传输后端解耦"
 subtitle: "从内存注册、元数据握手到异步 P/D KV Cache 交接"
 date: 2026-07-05 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: kv-cache-memory
 series_order: 50
 technology_year: 2025
+mathjax: true
 tags: [分离式推理, KV Cache, 分布式推理]
 ---
 

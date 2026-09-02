@@ -3,7 +3,7 @@ layout: post
 title: "llm-d：Kubernetes 原生分布式 LLM 推理栈"
 subtitle: "沿一条请求理解智能路由、KV Cache 与 Prefill/Decode 解耦"
 date: 2026-06-01 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: distributed-inference
@@ -145,12 +145,12 @@ Pod B: 无缓存，queue=0
 
 可以用一个概念性目标表达：
 
-\[
+$$
 \widehat{T}_{finish}(e)=
 \widehat{T}_{queue}(e)+
 \widehat{T}_{uncached\ prefill}(e)+
 \widehat{T}_{decode}(e)
-\]
+$$
 
 对 endpoint \(e\)，路由器希望选取预计完成时间更低者。前缀命中减少第二项，运行请求数和队列深度影响第一项，硬件与 batch 状态同时影响三项。
 
@@ -227,9 +227,9 @@ local NVMe or shared filesystem
 
 请求再次出现时，系统比较两种代价：从慢层拉回 KV，还是重新计算前缀。设需要恢复的 KV 大小为 \(S_{kv}\)，有效传输带宽为 \(B\)，固定 I/O 开销为 \(L\)：
 
-\[
+$$
 T_{restore}\approx L+\frac{S_{kv}}{B}
-\]
+$$
 
 只有当 \(T_{restore}<T_{recompute}\) 时，命中慢层才有性能意义。远端存储提供更大容量、跨副本共享和重启后保留，但网络拥塞、随机 I/O 与并行请求可能使恢复变慢。
 
@@ -248,9 +248,9 @@ T_{restore}\approx L+\frac{S_{kv}}{B}
 
 但拆开后必须支付 KV 转移成本。若模型有 \(L\) 层、每 token KV 元素数为 \(d_{kv}\)、数据类型为 \(b\) bytes，长度 \(s\) 的 prompt 所需 KV 规模可粗略表示为：
 
-\[
+$$
 S_{kv}\approx 2Lsd_{kv}b
-\]
+$$
 
 系数 2 对应 key 与 value。GQA、MLA、量化和具体布局会改变实际大小，但“上下文越长，需转移状态越多”的趋势不变。
 
@@ -353,9 +353,9 @@ GPU utilization 对生成服务并不是单调的健康指标。decode 可能 me
 
 llm-d 支持用 HPA/KEDA 消费 EPP 导出的队列等指标，也提供 Workload Variant Autoscaler 的方向来跨 variant 放置副本。无论控制器多复杂，容量模型都应先估算扩容提前量：
 
-\[
+$$
 T_{ready}=T_{schedule}+T_{image}+T_{weight\ load}+T_{compile/warmup}
-\]
+$$
 
 若流量尖峰持续时间短于 \(T_{ready}\)，事后扩容很难救场，需要预热副本、预测扩容或入口限流。
 

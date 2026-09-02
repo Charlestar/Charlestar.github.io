@@ -3,7 +3,7 @@ layout: post
 title: "CUDA Graph：把动态 LLM Serving 装进可重放的静态执行图"
 subtitle: "从 Kernel Launch 开销到 Batch Bucket、静态地址与 Piecewise Capture"
 date: 2026-07-29 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -421,7 +421,7 @@ Graph 要维持捕获时使用的稳定地址。PyTorch caching allocator 为 Gr
 $$
 M_{graphs}
 \approx \sum_{c\in\mathcal C}
-\left(M_{staticIO,c}+M_{workspace,c}+M_{privatePool,c}ight)
+\left(M_{staticIO,c}+M_{workspace,c}+M_{privatePool,c}\right)
 -M_{safeReuse}
 $$
 

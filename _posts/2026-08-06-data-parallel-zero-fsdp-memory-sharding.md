@@ -3,7 +3,7 @@ layout: post
 title: "从 Data Parallel 到 ZeRO/FSDP：训练显存到底怎样被切开"
 subtitle: "逐项计算参数、梯度、Optimizer State、Activation 与 Collective 的生命周期"
 date: 2026-08-06 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: distributed-training
@@ -170,7 +170,7 @@ Stage 2 在 Stage 1 基础上分片 gradients：
 $$
 M_{Z2}
 \approx
-2P+rac{14P}{N}
+2P+\frac{14P}{N}
 $$
 
 低精度 parameters 的 $2P$ 仍 replicated；gradients 的 $2P$ 与 optimizer states 的 $12P$ 按 rank 分片。
@@ -417,7 +417,7 @@ across nodes:
   replicate each shard group and synchronize replicas
 ```
 
-这样用更多参数副本换取跨节点通信减少。它的最佳 group size通常对应 NVLink/NVSwitch island、NIC rail 与 NUMA 边界，而不是任意 world-size 因数。
+这样用更多参数副本换取跨节点通信减少。它的最佳 group size 通常对应 NVLink/NVSwitch island、NIC rail 与 NUMA 边界，而不是任意 world-size 因数。
 
 同一作业还可能叠加 Tensor Parallel、Pipeline Parallel 或 Expert Parallel。此时每个 process group 必须明确：
 
@@ -469,7 +469,7 @@ DDP 可以让 rank 0 直接保存完整 `state_dict`，因为它本来就持有�
 - 兼容性高；
 - 聚合时可能 OOM；
 - rank 0 内存与 I/O 成为瓶颈；
-- optimizer full state更大。
+- optimizer full state 更大。
 
 ### Sharded State Dict
 
@@ -624,7 +624,7 @@ ZeRO/FSDP 并没有让训练状态消失，而是缩短完整状态的驻留时�
 4. ReduceScatter 让每个 rank 只保留自己的 gradient shard；
 5. Stage 3 在模块计算前 AllGather，之后按策略 Reshard；
 6. Wrap granularity 与 prefetch 同时决定通信效率和峰值 full-parameter windows；
-7. Activation checkpointing、parallelism 与 offload处理的是不同显存项；
+7. Activation checkpointing、parallelism 与 offload 处理的是不同显存项；
 8. FSDP/ZeRO group 必须匹配 TP/PP/EP 维度和物理拓扑；
 9. Sharded checkpoint 必须保存全局 tensor 的 identity、placement 与训练状态；
 10. 最终以正确性、tokens/s、峰值显存、通信 overlap 与恢复能力共同验收。

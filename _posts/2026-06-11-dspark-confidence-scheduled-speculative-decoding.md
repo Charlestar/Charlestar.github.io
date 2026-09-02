@@ -3,7 +3,7 @@ layout: post
 title: "DSpark：用置信度决定推测解码该验证多远"
 subtitle: "从半自回归草稿、前缀存活概率到 SGLang Ragged Verification"
 date: 2026-06-11 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -50,11 +50,11 @@ result:      接受连续前缀，首次拒绝后停止沿该路径接受
 
 因此，推测解码成立需要一个基本不等式：
 
-\[
+$$
 T_{draft}+T_{verify}(K)
 <
 E[A_K]\cdot T_{decode}
-\]
+$$
 
 其中：
 
@@ -70,15 +70,15 @@ E[A_K]\cdot T_{decode}
 
 候选链不是若干互相独立的 token。要接受第 5 个候选，前 4 个必须先通过验证。设第 (i) 个 token 在此前缀已经通过的条件下，被接受的概率为 (c_i)：
 
-\[
+$$
 c_i=P(\text{第 }i\text{ 个 token 通过}\mid\text{前 }i-1\text{ 个已通过})
-\]
+$$
 
 那么候选前缀至少存活到深度 (k) 的概率约为：
 
-\[
+$$
 S_k=\prod_{i=1}^{k}c_i
-\]
+$$
 
 这条乘积曲线通常随深度下降。即使每一步的条件接受率都不算低，长前缀的整体存活概率也会快速衰减。例如：
 
@@ -95,9 +95,9 @@ S_k=\prod_{i=1}^{k}c_i
 
 期望接受长度可以由存活曲线表示：
 
-\[
+$$
 E[A_K]\approx\sum_{k=1}^{K}S_k
-\]
+$$
 
 把验证窗口从 (K) 扩到 (K+1) 时，新增的期望收益正是 (S_{K+1})。越靠后的候选，边际收益通常越小。这为“根据置信度截短验证”提供了直接依据。
 
@@ -178,10 +178,10 @@ DSpark 使用 Sequential Temperature Scaling（STS）对序列置信度进行校
 
 常见检查方式是把预测值分桶，比较每个桶的平均置信度与真实接受率，并计算 Expected Calibration Error（ECE）：
 
-\[
+$$
 ECE=\sum_{b=1}^{B}\frac{|I_b|}{n}
 \left|\operatorname{acc}(I_b)-\operatorname{conf}(I_b)\right|
-\]
+$$
 
 其中 (I_b) 是第 (b) 个置信度区间。ECE 低不代表 drafter 的接受率高，它只说明“报出的概率更可信”。一个接受率一般但校准良好的模型，反而可能比高估自己的模型更适合成本调度。
 
@@ -193,9 +193,9 @@ ECE=\sum_{b=1}^{B}\frac{|I_b|}{n}
 
 SGLang 的 DSpark 集成用一个可测量的加性成本模型描述单步时间：
 
-\[
+$$
 T(bs,K)=bias+\alpha(bs)+\theta(M),\qquad M=bs+K
-\]
+$$
 
 这里：
 

@@ -3,7 +3,7 @@ layout: post
 title: "NVFP4 KV Cache：Blackwell 上的 4-bit 缓存量化"
 subtitle: "从 E2M1 与双层缩放到容量、内核和精度验证"
 date: 2026-06-02 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -28,9 +28,9 @@ KV Cache 是用显存换计算：每生成一个 token，模型把它在各层�
 
 以标准 multi-head/GQA attention 为例，每个 token、每一层要保存 \(H_{kv}\) 个 K heads 和 \(H_{kv}\) 个 V heads，每个 head 维度为 \(D\)。忽略页对齐、缩放因子与 allocator metadata，缓存大小为：
 
-\[
+$$
 M_{KV}=2\cdot L\cdot N\cdot H_{kv}\cdot D\cdot B
-\]
+$$
 
 其中：
 
@@ -43,9 +43,9 @@ M_{KV}=2\cdot L\cdot N\cdot H_{kv}\cdot D\cdot B
 
 单 token 的裸缓存量则是：
 
-\[
+$$
 M_{token}=2LH_{kv}DB
-\]
+$$
 
 假设一个模型有 80 层、8 个 KV heads、head dimension 为 128：
 
@@ -116,13 +116,13 @@ NVFP4 的数值 payload 使用 E2M1：
 
 NVFP4 对每 16 个值使用一个 E4M3 FP8 block scale，并为更大张量使用一个 FP32 global scale。设某个 micro-block 的全局尺度为 \(s_t\)，局部尺度为 \(s_b\)，可以用下式理解量化与反量化：
 
-\[
+$$
 q_i=Q_{E2M1}\left(\frac{x_i}{s_t s_b}\right)
-\]
+$$
 
-\[
+$$
 \hat{x}_i=s_t s_b q_i
-\]
+$$
 
 其中 \(Q_{E2M1}\) 表示舍入到最近 E2M1 值并处理超出范围的输入。
 
@@ -167,21 +167,21 @@ tensor global scale: FP32
 
 暂不计 global scale 与对齐，仅 payload + block scale 就是：
 
-\[
+$$
 \frac{64+8}{16}=4.5\text{ bits/value}
-\]
+$$
 
 相对于 BF16 的 16 bits/value，理想压缩比约为：
 
-\[
+$$
 \frac{16}{4.5}\approx3.56\times
-\]
+$$
 
 相对于 FP8 的 8 bits/value，理想压缩比约为：
 
-\[
+$$
 \frac{8}{4.5}\approx1.78\times
-\]
+$$
 
 因此 NVIDIA 对通用 NVFP4 格式使用过约 3.5 倍于 FP16、1.8 倍于 FP8 的内存缩减表述；KV Cache 博文则将实现效果概括为相对 FP8 约/最高 50% 的 footprint 降低。二者并不意味着可以忽略 scale，而是统计口径和具体布局不同。
 
@@ -220,10 +220,10 @@ KV page payload + scales
 
 attention 可写为：
 
-\[
+$$
 A=\operatorname{softmax}\left(\frac{QK^T}{\sqrt{d}}+M\right),
 \qquad O=AV
-\]
+$$
 
 量化后使用 \(K+\Delta K\) 与 \(V+\Delta V\)：
 

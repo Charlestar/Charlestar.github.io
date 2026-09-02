@@ -3,7 +3,7 @@ layout: post
 title: "FlashInfer：面向 LLM Serving 的可组合 GPU Kernel 库"
 subtitle: "从动态请求形状到 plan/run、JIT 与后端分派"
 date: 2026-05-13
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -13,7 +13,7 @@ mathjax: true
 tags: [GPU优化, FlashInfer, LLM推理]
 ---
 
-FlashAttention 证明了改变数据搬运方式可以显著加速精确注意力，但 LLM serving 面对的问题比一组规则的 $Q、K、V$ 更复杂：每个请求长度不同，KV Cache 分散在页中，batch 每轮变化，prefill 与 decode 的 Query 长度也完全不同，还可能同时出现 GQA、MLA、低精度缓存、滑动窗口和自定义 mask。
+FlashAttention 证明了改变数据搬运方式可以显著加速精确注意力，但 LLM serving 面对的问题比一组规则的 $Q, K, V$ 更复杂：每个请求长度不同，KV Cache 分散在页中，batch 每轮变化，prefill 与 decode 的 Query 长度也完全不同，还可能同时出现 GQA、MLA、低精度缓存、滑动窗口和自定义 mask。
 
 FlashInfer 的定位，是为这些 serving 形状提供可组合的 GPU kernel 与生成基础设施。它不是完整推理服务器，不负责 HTTP、请求队列和业务路由；上层的 vLLM、SGLang 等 runtime 可以把具体计算交给它。
 
@@ -143,7 +143,7 @@ qo_indptr + page table + lengths + heads + dtype
 
 ## Attention state 为什么可以合并
 
-对一个 Query，将 KV 集合拆成互不重叠的两段 $A、B$。每段 attention 可以保存三个状态：
+对一个 Query，将 KV 集合拆成互不重叠的两段 $A, B$。每段 attention 可以保存三个状态：
 
 - 局部输出累积；
 - 局部 log-sum-exp 或等价归一化统计量；

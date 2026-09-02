@@ -3,7 +3,7 @@ layout: post
 title: "MoE 与推测解码：计算、通信和接受率的联合优化"
 subtitle: "从专家散射看清为什么验证更多 token 可能反而更慢"
 date: 2026-05-29 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -27,15 +27,15 @@ tags: [推测解码, MoE, 专家并行]
 
 一个典型 sparse MoE 层包含 router、若干 routed experts，模型也可能同时包含 shared expert。对 token 表示 \(x\)，router 给出各专家分数，并选择 top-\(r\) 个专家：
 
-\[
+$$
 \mathcal{E}(x)=\operatorname{TopR}(\operatorname{softmax}(W_r x))
-\]
+$$
 
 该层输出可以抽象为：
 
-\[
+$$
 y=\sum_{e\in\mathcal{E}(x)}g_e(x)E_e(x)+E_{shared}(x)
-\]
+$$
 
 参数总量可能很大，但单个 token 只经过少数 routed experts，这就是条件计算带来的优势。
 
@@ -78,17 +78,17 @@ unpermute + weighted combine
 
 假设目标模型验证 \(m\) 个 token。dense FFN 无论 \(m=1\) 还是 \(m=8\)，每层都会访问同一组权重：
 
-\[
+$$
 \mathcal{W}_{dense}(m)=\mathcal{W}_{dense}
-\]
+$$
 
 当 batch 很小时，权重读取通常占主要成本；一次处理更多 token 能提高算术强度，所以 \(T_{dense}(8)\) 往往远小于 \(8T_{dense}(1)\)。这为推测解码创造了空间。
 
 MoE 的活跃权重集合则取决于 token 路由：
 
-\[
+$$
 \mathcal{W}_{moe}(m)=\bigcup_{i=1}^{m}\mathcal{E}(x_i)
-\]
+$$
 
 若 8 个候选都落到相近专家，专家权重可以被同一 grouped GEMM 中的多个 token 复用；若它们路由到互不重叠的专家，活跃专家并集会迅速扩大。后一种现象通常称为 **expert scattering**。
 
@@ -117,15 +117,15 @@ MoE 的活跃权重集合则取决于 token 路由：
 
 草稿模型按 \(q\) 生成候选 \(y\)，目标模型计算对应概率 \(p(y)\)。候选以如下概率被接受：
 
-\[
+$$
 P(accept\ y)=\min\left(1,\frac{p(y)}{q(y)}\right)
-\]
+$$
 
 在第一次拒绝处，不能简单地丢掉候选后直接从 \(p\) 重采样；需要从校正分布中采样：
 
-\[
+$$
 p'(x)=\operatorname{Normalize}\left(\max(p(x)-q(x),0)\right)
-\]
+$$
 
 随后停止接受该候选链后面的 token。tree-based 方法的记账更复杂，但原则相同：候选生成可以任意加速，最终目标分布必须通过验证与校正恢复。
 
@@ -148,15 +148,15 @@ p'(x)=\operatorname{Normalize}\left(\max(p(x)-q(x),0)\right)
 
 推测轮成本为：
 
-\[
+$$
 T_{spec}=T_{draft}(k)+T_{verify}^{moe}(n,\mathcal{U})+T_{book}
-\]
+$$
 
 其中 \(\mathcal{U}\) 表示各层活跃专家并集及其分布。若普通自回归生成一个 token 的成本为 \(T_{AR}\)，一个直观的相对效用可以写成：
 
-\[
+$$
 Utility=\frac{R\cdot T_{AR}}{T_{spec}}
-\]
+$$
 
 只有 \(Utility>1\) 时，这一轮才真正节省时间。
 
@@ -171,11 +171,11 @@ Utility=\frac{R\cdot T_{AR}}{T_{spec}}
 
 因此，比 acceptance rate 更接近系统收益的指标是：
 
-\[
+$$
 \text{target efficiency}
 =\frac{\text{committed tokens}}
 {\text{target expert executions or verification time}}
-\]
+$$
 
 它迫使评测同时考虑“得到了多少”和“验证花了多少”。
 
@@ -231,9 +231,9 @@ EcoSpec 把 predicted marginal expert activation cost 纳入候选树选择。�
 
 可以把候选节点 \(v\) 的启发式评分写成：
 
-\[
+$$
 Score(v)=\log P_q(v)-\lambda\cdot \Delta C_{expert}(v)
-\]
+$$
 
 其中 \(\Delta C_{expert}(v)\) 是把节点加入树后预计新增的专家成本，\(\lambda\) 控制概率质量与成本之间的权衡。这只是帮助选择“验证谁”；最终入选节点仍由完整目标模型验证，所以不会因为候选排序本身改变目标分布。
 
@@ -291,10 +291,10 @@ drafter latency
 
 一次 MoE 验证可以粗略拆成：
 
-\[
+$$
 T_{verify}^{moe}=
 T_{attn}+T_{route}+T_{dispatch}+T_{grouped\ GEMM}+T_{combine}+T_{sample}
-\]
+$$
 
 其中：
 
@@ -390,10 +390,10 @@ cross-node assignment ratio
 
 可以定义专家复用率：
 
-\[
+$$
 Reuse=1-\frac{|\bigcup_i\mathcal{E}(x_i)|}
 {\sum_i|\mathcal{E}(x_i)|}
-\]
+$$
 
 它不是跨模型通用的性能指标，但在 top-\(r\) 固定时，能帮助比较两种候选树是否把 assignment 集中在更小的专家集合中。
 

@@ -3,12 +3,13 @@ layout: post
 title: "SpecForge：把 EAGLE3 从训练样本交付到 SGLang"
 subtitle: "理解特征对齐、Training-Time Test 与草稿模型的部署契约"
 date: 2026-05-27 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: speculative-decoding
 series_order: 40
 technology_year: 2025
+mathjax: true
 tags: [推测解码, EAGLE, SGLang]
 ---
 
@@ -83,23 +84,23 @@ EAGLE3 的变化不是简单地“再加几个隐藏层”，而是同时完成�
 
 假设目标模型隐藏维度为 \(d\)，从低层、中层、高层分别抽取同一 token 位置的向量：
 
-\[
+$$
 h_t^{low},\quad h_t^{mid},\quad h_t^{high}\in\mathbb{R}^{d}
-\]
+$$
 
 先连接三个向量，再用全连接层投影回 drafter 的工作维度：
 
-\[
+$$
 g_t = W_f [h_t^{low};h_t^{mid};h_t^{high}]
-\]
+$$
 
 不同深度的表征承担的功能并没有严格边界，但可以用一个直观视角理解：较低层保留更多局部词法和句法信息，中间层逐渐组织上下文，高层更直接地服务于下一个 token 的预测。融合并不是把信息简单平均，而是让训练学出在不同场景下如何组合这些视角。
 
 token embedding 仍然不可缺少。drafter 需要知道已经选择了哪个候选 token，同时读取融合特征，才能继续向前预测。概念上可写成：
 
-\[
+$$
 a_{t+1}=D(e(x_t), g_t)
-\]
+$$
 
 其中 \(D\) 是很浅的 drafter，\(e(x_t)\) 是 token embedding，\(a_{t+1}\) 是它的输出表示。输出经过 LM head 后得到下一 token 的草稿分布。
 
@@ -315,9 +316,9 @@ deployment:
 
 可用一条简单的生产者—消费者关系定位问题：
 
-\[
+$$
 T_{step}\approx\max(T_{feature\ producer},T_{transfer},T_{trainer})
-\]
+$$
 
 如果 trainer GPU 经常等待数据，继续增加 trainer rank 只会扩大饥饿。应先看特征生产速率、磁盘吞吐、网络带宽、队列占用和每步有效 token 数，再决定扩哪一侧。
 
