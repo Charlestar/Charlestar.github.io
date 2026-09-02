@@ -3,7 +3,7 @@ layout: post
 title: "Program-Aware Serving：Agent 等待工具时，GPU 状态该放在哪里"
 subtitle: "从 Call 依赖、PLAS/ATLAS 调度到 KV Preserve、Swap 与 Recompute，理解 Agent 工作流的推理数据面"
 date: 2026-08-29 09:00:00 +0800
-last_modified_at: 2026-08-31
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: model-serving-agents
@@ -30,7 +30,7 @@ user task
 1. Call B、C、D 的完成时间共同决定同一个 Program 的端到端延迟；
 2. 工具等待期间，前一轮生成的 KV Cache 暂时不计算，却可能很快再次使用。
 
-“把单次请求跑得更快”不一定让整个 Agent 更快。一个已经执行了几十次 Call 的长 Program，可能不断把后续 Call 插到队列前面，让刚到达的短 Program长期等待；另一边，如果每次工具调用都销毁 KV，恢复后要重算全部历史；若所有等待任务都把 KV 固定在 GPU，又会把显存留给当前无法运行的 Program。
+“把单次请求跑得更快”不一定让整个 Agent 更快。一个已经执行了几十次 Call 的长 Program，可能不断把后续 Call 插到队列前面，让刚到达的短 Program 长期等待；另一边，如果每次工具调用都销毁 KV，恢复后要重算全部历史；若所有等待任务都把 KV 固定在 GPU，又会把显存留给当前无法运行的 Program。
 
 Program-Aware Serving 要做的，是让推理数据面认识到 Call 的上层生命周期：它不需要理解业务答案，却要知道 Program Identity、依赖关系、累计服务量、暂停原因和可恢复状态。本文从 Call 与 Program 的区别开始，结合 Autellix 的程序级调度和 InferCept 的中断式 KV 管理，构建一条从 Agent Runtime 到 GPU Scheduler 的完整链路。
 
@@ -119,7 +119,7 @@ $$
 priority(c)=-A_{program(c)}
 $$
 
-直觉是：已经消耗很多服务的长 Program不应让每个新 Call 都获得“全新请求”的最高优先级；累计服务较少的 Program更可能较快完成。
+直觉是：已经消耗很多服务的长 Program 不应让每个新 Call 都获得“全新请求”的最高优先级；累计服务较少的 Program 更可能较快完成。
 
 PLAS 不需要事先知道剩余长度，但不是在预测绝对最短 Program。它是一种减少程序级阻塞的在线近似，仍需结合业务优先级与防饥饿机制。
 
@@ -150,7 +150,7 @@ A ─ B ───┤            ├─ E
 
 Autellix 的 ATLAS（Adaptive Thread-Level Attained Service）把累计服务扩展到 Thread，并利用 Program 内 Thread 的最大累计服务近似 Critical Path。它在没有完整未来 DAG 的情况下，让阻塞 Program 推进的关键 Call 获得更合理的顺序。
 
-实现需要 Agent Runtime报告 Fork/Join 和 Thread 关系。只给所有并行 Call 相同 `program_id`，却没有依赖结构，Scheduler 仍无法判断哪个分支卡住了 Join。
+实现需要 Agent Runtime 报告 Fork/Join 和 Thread 关系。只给所有并行 Call 相同 `program_id`，却没有依赖结构，Scheduler 仍无法判断哪个分支卡住了 Join。
 
 ## 7. Program Scheduler 不应直接猜业务 DAG
 
@@ -189,7 +189,7 @@ LLM decode
   → resume LLM
 ```
 
-等待时间可能从毫秒到分钟，甚至永远不返回。等待期间 GPU 不需要为该 Program计算 Token，但它的上下文很可能在恢复时继续使用。
+等待时间可能从毫秒到分钟，甚至永远不返回。等待期间 GPU 不需要为该 Program 计算 Token，但它的上下文很可能在恢复时继续使用。
 
 这产生了一个资源问题：已建立的 KV Cache 应该留在 GPU、换到其他层级，还是释放并在恢复时重算？
 
@@ -306,7 +306,7 @@ Onboard、跨 Worker Migration 同理。元数据至少包含：
 
 ## 14. 工具结果到达时不一定应该立即抢占别人
 
-工具返回意味着 Program 变为 Runnable，不代表它必须立刻运行。如果所有恢复请求都插队，频繁使用快速工具的长 Program会压住普通请求。
+工具返回意味着 Program 变为 Runnable，不代表它必须立刻运行。如果所有恢复请求都插队，频繁使用快速工具的长 Program 会压住普通请求。
 
 恢复 Call 应回到 Program-Aware Scheduler：
 
@@ -362,7 +362,7 @@ program attained service
   includes useful and policy-defined wasted service
 ```
 
-是否把失败计算全部计入优先级需要策略，但至少不能无条件归零。否则错误频繁的 Program反而获得更多资源。
+是否把失败计算全部计入优先级需要策略，但至少不能无条件归零。否则错误频繁的 Program 反而获得更多资源。
 
 外部工具副作用还需要独立幂等键。Serving 层恢复 LLM Call，不应自动重复一笔已经成功的支付、删除或消息发送。
 
@@ -423,7 +423,7 @@ hard policy: tenant / priority / safety constraints
 
 ## 20. “最短 Program 优先”仍需要防饥饿
 
-持续到来的短 Program可能让长 Program一直排队。公平策略需要 Aging 或最低服务保证：
+持续到来的短 Program 可能让长 Program 一直排队。公平策略需要 Aging 或最低服务保证：
 
 $$
 score_p
@@ -432,7 +432,7 @@ score_p
 -w_3\cdot urgency_p
 $$
 
-还可以按租户设置 Weighted Fair Share，防止一个租户用大量短 Program占满所有完成槽。
+还可以按租户设置 Weighted Fair Share，防止一个租户用大量短 Program 占满所有完成槽。
 
 要同时观察：
 
@@ -442,7 +442,7 @@ $$
 - 各租户获得的 GPU Service；
 - 被抢占、Offload 与重算次数。
 
-只优化平均 Program Latency，可能牺牲少量长 Program到不可接受的程度。
+只优化平均 Program Latency，可能牺牲少量长 Program 到不可接受的程度。
 
 ## 21. Tool Wait 是显存回收窗口，也是预取窗口
 
@@ -457,9 +457,9 @@ tool wait begins
 → enqueue runnable call
 ```
 
-若预取过早，KV 又在 GPU 空等；过晚则 Program等待 Onboard。可以根据工具类型、历史延迟分布和实时进度选择 Prefetch Lead Time。
+若预取过早，KV 又在 GPU 空等；过晚则 Program 等待 Onboard。可以根据工具类型、历史延迟分布和实时进度选择 Prefetch Lead Time。
 
-但是工具服务并不总暴露进度，预测也可能被第三方抖动打破。Prefetch 必须受独立带宽与 KV 水位预算约束，不能为了一个可能恢复的 Program挤掉正在 Decode 的请求。
+但是工具服务并不总暴露进度，预测也可能被第三方抖动打破。Prefetch 必须受独立带宽与 KV 水位预算约束，不能为了一个可能恢复的 Program 挤掉正在 Decode 的请求。
 
 ## 22. TTL 不应只有一个全局常数
 
@@ -496,7 +496,7 @@ Prefix Cache 是可供一个或多个未来请求复用的已完成前缀；Susp
 | Suspended Program KV | Program Attempt | 按策略迁移/重算 | 错用会破坏继续生成 |
 | Active Decode KV | Running Sequence | 需先抢占/提交 | 下一轮立即读取 |
 
-Suspended State 还绑定 Sampling、Stop、Grammar 与工具调用位置，不能因为 Token Prefix 相同就让另一个 Program获得完整私有状态。
+Suspended State 还绑定 Sampling、Stop、Grammar 与工具调用位置，不能因为 Token Prefix 相同就让另一个 Program 获得完整私有状态。
 
 跨租户 Prefix 共享也要遵守隐私策略，不能让 Cache Hit 延迟成为敏感工作流的侧信道。
 
@@ -545,7 +545,7 @@ Engine state：KV blocks、runner slot、kernel in-flight
 
 GPU Worker 崩溃后，Engine State 通常丢失；若有外部 KV 副本，可以 Onboard，否则从 Call Token 重算。Program Runtime 再决定 Call 是否可重试，以及哪些工具不能重复。
 
-State Epoch 防止旧 Worker复活后提交过期 Token。恢复后的累计服务也要延续，不能让故障 Program重获零 Attained Service。
+State Epoch 防止旧 Worker 复活后提交过期 Token。恢复后的累计服务也要延续，不能让故障 Program 重获零 Attained Service。
 
 ## 27. 可观测性要同时看 Call 和 Program
 
@@ -578,7 +578,7 @@ PROGRAM_COMPLETED / PROGRAM_CANCELLED
 
 ## 28. 评测必须使用真实 DAG 与工具延迟
 
-把每个 Program简化成固定三次相同长度 Call，会掩盖动态分支与中断。
+把每个 Program 简化成固定三次相同长度 Call，会掩盖动态分支与中断。
 
 测试集应覆盖：
 
@@ -623,7 +623,7 @@ Program-Aware Serving 至少要验证：
 
 ### 第一步：先建立跨 Call 的 Identity 与 Trace
 
-让 Agent Runtime稳定传递 Program/Thread/Call/Attempt/Epoch，先观察 Program E2E 和工具等待分布，不立即改变调度。
+让 Agent Runtime 稳定传递 Program/Thread/Call/Attempt/Epoch，先观察 Program E2E 和工具等待分布，不立即改变调度。
 
 ### 第二步：实现可恢复的 Interception
 
@@ -631,11 +631,11 @@ Program-Aware Serving 至少要验证：
 
 ### 第三步：引入 Program 累计服务
 
-在单 Engine 上比较 FCFS、MLFQ 与 PLAS，加入 Aging、租户权重和 Deadline Guard；验证不会让长 Program饥饿。
+在单 Engine 上比较 FCFS、MLFQ 与 PLAS，加入 Aging、租户权重和 Deadline Guard；验证不会让长 Program 饥饿。
 
 ### 第四步：扩展到 DAG 与 Critical Path
 
-让 Runtime报告 Fork/Join，加入 ATLAS 类 Thread 统计；取消无效分支并验证 Join 语义。
+让 Runtime 报告 Fork/Join，加入 ATLAS 类 Thread 统计；取消无效分支并验证 Join 语义。
 
 ### 第五步：建立多 Engine Placement
 

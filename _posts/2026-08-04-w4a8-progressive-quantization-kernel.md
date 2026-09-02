@@ -3,7 +3,7 @@ layout: post
 title: "W4A8：4-bit Weight 怎样喂给 8-bit Tensor Core"
 subtitle: "从 Progressive Quantization、寄存器解包到 QServe 的系统协同设计"
 date: 2026-08-04 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -324,7 +324,7 @@ Embedding、LM head、某些 projection 或异常敏感层可以保留更高精�
 
 ## 正确性验证要覆盖五道边界
 
-W4A8 的系统链比单级 weight-only quantization更长，建议按以下顺序验证。
+W4A8 的系统链比单级 weight-only quantization 更长，建议按以下顺序验证。
 
 ### 1. Mathematical Transform
 

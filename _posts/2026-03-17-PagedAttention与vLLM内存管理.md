@@ -3,7 +3,7 @@ layout: post
 title: "PagedAttention 与 vLLM KV Cache 管理"
 subtitle: "一条请求的分块、映射、共享与回收"
 date: 2026-03-17
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -78,7 +78,7 @@ physical pool:  ...[3]...[7].........[19]...
 
 当请求继续生成第 11、12 个 token，只需填满物理块 3 的剩余槽位；生成第 13 个 token 时才申请一个新块。请求不必在开始时知道最终长度，也不要求下一块与当前块物理相邻。
 
-最后一个块仍可能有空槽，所以分页不是绝对零浪费。若 block size 为 $B_s$，单条序列尾部最多浪费 $B_s-1$ 个 token slot；相较为最大长度预留，浪费被限制在一个 block 内。
+最后一个块仍可能有空槽，所以分页不是绝对零浪费。若 block size 为 $B_s$，单条序列尾部最多浪费 $B_s-1$ 个 token slot；相较于按最大长度预留，浪费被限制在一个 block 内。
 
 ## Block 中实际保存什么
 

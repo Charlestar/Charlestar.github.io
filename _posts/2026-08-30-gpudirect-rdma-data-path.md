@@ -314,7 +314,7 @@ MR / lkey / rkey
 
 `close(dma-buf fd)` 只释放当前进程持有的这个 fd 引用，不会自动撤销已经建立的 MR/attachment，也不保证 outstanding DMA 已停止。真正的 revoke 仍需按 `stop admission -> drain -> deregister MR -> detach/unmap` 的顺序完成。
 
-但 DMA-BUF 不是自动获得 GDR 的开关。当前 NVIDIA GPU Operator 文档列出的典型前提包括 Linux kernel 5.12+、CUDA 11.7+、NVIDIA Open GPU Kernel Modules 以及支持的 GPU；UCX 官方 FAQ同样给出 UCX 1.14+、kernel 5.12+、CUDA 11.7+ 与 open kernel module 这组条件。具体 driver、NIC、rdma-core、发行版和虚拟化组合仍要按支持矩阵锁定。
+但 DMA-BUF 不是自动获得 GDR 的开关。当前 NVIDIA GPU Operator 文档列出的典型前提包括 Linux kernel 5.12+、CUDA 11.7+、NVIDIA Open GPU Kernel Modules 以及支持的 GPU；UCX 官方 FAQ 同样给出 UCX 1.14+、kernel 5.12+、CUDA 11.7+ 与 open kernel module 这组条件。具体 driver、NIC、rdma-core、发行版和虚拟化组合仍要按支持矩阵锁定。
 
 截至本文修改日期，GPU Operator 明确推荐 DMA-BUF 而不是 `nvidia-peermem`。这是一条部署方向，不是“任何旧集群都应立刻卸载 peer-memory module”的命令。升级必须先用 raw verbs、UCX/NCCL 与真实 workload 验证功能、性能和回退行为。
 
@@ -459,7 +459,7 @@ NVIDIA 文档提醒，即使第三方设备已经发完 PCIe transaction，并�
 3. CPU 通过 CUDA work submission/synchronization 边界启动 dependent kernel；
 4. consumer stream 才读取 buffer。
 
-不能让一个 persistent kernel 盲目轮询普通 GPU buffer，并假设 NIC 写入天然符合 CUDA memory model。GPU-initiated networking、stream memory operations、system-scope atomics或专用 semaphore 可能提供更强机制，但必须使用对应 API 和硬件 contract，不能从普通 GDR 自动推导。
+不能让一个 persistent kernel 盲目轮询普通 GPU buffer，并假设 NIC 写入天然符合 CUDA memory model。GPU-initiated networking、stream memory operations、system-scope atomics 或专用 semaphore 可能提供更强机制，但必须使用对应 API 和硬件 contract，不能从普通 GDR 自动推导。
 
 #### `cuFlushGPUDirectRDMAWrites` 解决的是可见范围，不是并发竞争
 
@@ -471,7 +471,7 @@ NVIDIA 文档提醒，即使第三方设备已经发完 PCIe transaction，并�
 
 不同 completion 回答不同问题：
 
-- local send CQE：本地 WR 达到 transport 定义的完成条件，本地 source buffer何时可复用需看 opcode/provider contract；
+- local send CQE：本地 WR 达到 transport 定义的完成条件，本地 source buffer 何时可复用需看 opcode/provider contract；
 - receive CQE：two-sided receive buffer 已按 transport 规则完成；
 - RDMA Write initiator CQE：不自动给远端应用生成事件；
 - Write with Immediate/额外 SEND：可以触发远端 CQ/通知，但 payload 与通知的 ordering 仍需遵守 QP、fence 与 provider 规则；
@@ -647,7 +647,7 @@ NCCL 还负责 collective ordering、chunking、channel 与多 rail；GDR 本身
 
 ### UCX：Transport 与 Protocol
 
-UCX 允许 tag、stream、active message 等 API 接收 GPU pointer，并在支持时选择 CUDA copy、GDR、shared memory、TCP 或 RDMA transport。官方 FAQ说明，大消息通常通过 rendezvous 使用 GPU zero-copy RDMA；小消息可能使用 eager/staging 路径。因而“UCX 支持 GDR”不等于每个消息都走 GDR。
+UCX 允许 tag、stream、active message 等 API 接收 GPU pointer，并在支持时选择 CUDA copy、GDR、shared memory、TCP 或 RDMA transport。官方 FAQ 说明，大消息通常通过 rendezvous 使用 GPU zero-copy RDMA；小消息可能使用 eager/staging 路径。因而“UCX 支持 GDR”不等于每个消息都走 GDR。
 
 UCX 还维护 memory-type detection 与 registration cache。`ucx_info -d | grep cuda` 可以检查构建能力，但实际协议仍要结合 `UCX_LOG_LEVEL`、`UCX_TLS`、message size 和 topology 验证。官方文档也提醒 GPU RMA API 支持程度与 tag/stream/AM 不完全相同，设计时应锁定 UCX 版本与所用 API。
 
@@ -759,7 +759,7 @@ RoCE loss、IB port down、CQ overrun、RNR、retry exceeded 或 device fatal �
 - NIC port counters、retransmit、ECN/PFC、congestion；
 - PCIe link width/speed、AER error；
 - GPU/NIC PCIe throughput；
-- GPU copy-engine activity与 host memory bandwidth，用于识别 staging；
+- GPU copy-engine activity 与 host memory bandwidth，用于识别 staging；
 - progress thread CPU 与 NUMA migration。
 
 ### 上层正确性

@@ -3,7 +3,7 @@ layout: post
 title: "Tensor Parallel：怎样把一个 Transformer Layer 切到多张 GPU"
 subtitle: "从 Column/Row Parallel MLP 到 Attention、Sequence Parallel 与二维设备网格"
 date: 2026-08-08 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: distributed-training
@@ -305,7 +305,7 @@ $$
 1. 各 rank 计算 local max，再 AllReduce max 得到 global max；
 2. 各 rank 计算稳定的 local exp sum，再 AllReduce sum 得到 global denominator；
 3. target token 所在 rank 取 target logit，其余 ranks 给 0，再 AllReduce sum；
-4. 用 global denominator 与 target logit计算 loss。
+4. 用 global denominator 与 target logit 计算 loss。
 
 公式上：
 
@@ -444,7 +444,7 @@ TP 的目标不是让每个 layer 用尽可能多 GPU，而是找到“单 rank 
 
 ## 通信重叠需要 Independent Work
 
-Row-parallel output若必须先 AllReduce 才能做 residual add，整个下一阶段都依赖 collective，难以完全隐藏。现代实现会尝试：
+Row-parallel output 若必须先 AllReduce 才能做 residual add，整个下一阶段都依赖 collective，难以完全隐藏。现代实现会尝试：
 
 - 把 GEMM 拆成 chunks，边计算边 ReduceScatter；
 - 将 weight-gradient GEMM 与 input-gradient collective 重叠；
@@ -458,11 +458,11 @@ Profiler 应标出每个 layer 的 GEMM、collective issue、wait 和 dependent 
 
 ## Bias、Dropout 与 RNG 也有 Placement
 
-Column-parallel bias 可以随 output features sharded，本地直接加入。Row-parallel bias属于完整 output，若每个 rank 都在 partial output 上先加一次，AllReduce 后会被重复 $p$ 次；应在求和之后加，或按明确缩放/fusion 处理。
+Column-parallel bias 可以随 output features sharded，本地直接加入。Row-parallel bias 属于完整 output，若每个 rank 都在 partial output 上先加一次，AllReduce 后会被重复 $p$ 次；应在求和之后加，或按明确缩放/fusion 处理。
 
 Dropout mask 影响数值可复现：
 
-- feature-sharded activation 的各 shards应使用不重叠、可重建的 RNG 子序列；
+- feature-sharded activation 的各 shards 应使用不重叠、可重建的 RNG 子序列；
 - replicated activation 若期望 ranks 一致，mask 也要一致；
 - sequence-sharded token ranges 应按 global position 确定 RNG mapping；
 - checkpoint 恢复后 RNG tracker 必须回到相同状态。
@@ -541,7 +541,7 @@ assert_close(Y_tp, Y_ref)
 
 训练中的 $M$ 通常为 micro-batch × sequence length；推理 Prefill、Decode 的 $M$ 差异更大。TP kernel/collective 测试至少覆盖：
 
-- QKV projection 的 $d\times( Q+K+V )$ shape；
+- QKV projection 的 $d\times(Q+K+V)$ shape；
 - GQA/MLA 下不对称 head dimensions；
 - gated MLP 的双分支 projection；
 - row-parallel down/output projection；
@@ -615,7 +615,7 @@ SP 主要去掉 TP 区域外的 activation replication；CP 让完整网络沿 s
 
 ### “Checkpoint 文件按 Rank 编号拼起来就能改 TP Size”
 
-不同参数的 shard axes、QKV interleave、gated layout、vocab padding 与 DP sharding都不同，必须依赖 logical metadata reshard。
+不同参数的 shard axes、QKV interleave、gated layout、vocab padding 与 DP sharding 都不同，必须依赖 logical metadata reshard。
 
 ## 小结
 

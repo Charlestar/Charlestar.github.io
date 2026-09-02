@@ -3,7 +3,7 @@ layout: post
 title: "Chunked Prefill：长 Prompt 为什么要切片执行"
 subtitle: "从 Prefill/Decode 干扰到 Token Budget 与 Stall-Free Scheduling"
 date: 2026-06-06 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -569,7 +569,7 @@ Partial prefill 已分配多轮 KV blocks。取消路径若只移除 waiting ent
 
 Chunked Prefill 解决的是 Continuous Batching 中最容易破坏交互体验的一次重工作：新请求的长 prompt。
 
-它沿 token 维把 prefill 拆成多轮，每一块继承前块的 KV Cache 和绝对位置，因此保持 causal attention 语义；调度器再将有限 prefill 工作与 decode token 组成混合 batch。Sarathi 的 decode-maximal batching说明了这种组合为何既能减少 generation stall，也能利用 prefill 的计算密集特征承载更多 decode。
+它沿 token 维把 prefill 拆成多轮，每一块继承前块的 KV Cache 和绝对位置，因此保持 causal attention 语义；调度器再将有限 prefill 工作与 decode token 组成混合 batch。Sarathi 的 decode-maximal batching 说明了这种组合为何既能减少 generation stall，也能利用 prefill 的计算密集特征承载更多 decode。
 
 真正落地时，需要同时看四个层次：
 
