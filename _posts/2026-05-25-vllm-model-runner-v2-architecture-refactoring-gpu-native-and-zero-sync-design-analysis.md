@@ -3,11 +3,11 @@ layout: post
 title: "vLLM Model Runner V2：GPU-native 与 async-first 的执行核心"
 subtitle: "从稳定状态表到无 CPU 同步的 CUDA Stream"
 date: 2026-05-25 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: serving-scheduling
-series_order: 60
+series_order: 70
 technology_year: 2026
 mathjax: true
 tags: [推理调度, vLLM, GPU优化]

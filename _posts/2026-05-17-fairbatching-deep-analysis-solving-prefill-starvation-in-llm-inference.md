@@ -3,12 +3,12 @@ layout: post
 title: "FairBatching：面向 LLM 推理的公平批次形成"
 subtitle: "从延迟契约、进度余量到 Prefill Admission Budget"
 date: 2026-05-17 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: serving-scheduling
 series_order: 50
-technology_year: 2026
+technology_year: 2025
 mathjax: true
 tags: [推理调度, LLM推理]
 ---

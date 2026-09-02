@@ -3,11 +3,11 @@ layout: post
 title: "P/D 弹性：扩容决定发出后，GPU 为什么还不能接请求"
 subtitle: "从 SLO 控制环、权重分发与编译缓存到 Worker Ready Gate，拆解分离式推理的容量生效时间"
 date: 2026-08-22 09:00:00 +0800
-last_modified_at: 2026-08-31
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-inference
-series_order: 70
+series_order: 30
 technology_year: 2024
 mathjax: true
 tags: [分布式推理, 分离式推理, Kubernetes]

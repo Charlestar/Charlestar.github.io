@@ -3,11 +3,11 @@ layout: post
 title: "SmoothQuant：把 Activation Outlier 迁移到 Weight"
 subtitle: "从等价通道缩放到 W8A8 INT8 GEMM、Q/DQ 融合与 Serving 收益"
 date: 2026-08-02 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: gpu-runtime-precision
-series_order: 40
+series_order: 30
 technology_year: 2022
 mathjax: true
 tags: [模型量化, GPU优化, LLM推理]

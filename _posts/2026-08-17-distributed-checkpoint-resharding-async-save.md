@@ -3,11 +3,11 @@ layout: post
 title: "Distributed Checkpoint：怎样保存并重分片多维训练状态"
 subtitle: "从 Sharded State Dict、两阶段提交到异步 I/O，构建真正可恢复的训练快照"
 date: 2026-08-17 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 50
+series_order: 100
 technology_year: 2023
 mathjax: true
 tags: [分布式训练, 工程实践]

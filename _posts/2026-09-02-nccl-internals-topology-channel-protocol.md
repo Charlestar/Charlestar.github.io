@@ -3,11 +3,11 @@ layout: post
 title: "NCCL 内部机制：一次 AllReduce 如何变成拓扑图、Channel 与 GPU Kernel"
 subtitle: "沿着 NCCL 2.31.2 的真实执行路径，理解调优、传输与故障诊断"
 date: 2026-09-02 02:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 7
+series_order: 40
 technology_year: 2015
 mathjax: true
 tags: [分布式训练, GPU优化]

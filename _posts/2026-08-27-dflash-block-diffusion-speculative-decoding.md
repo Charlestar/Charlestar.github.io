@@ -7,7 +7,7 @@ last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: speculative-decoding
-series_order: 80
+series_order: 70
 technology_year: 2026
 mathjax: true
 tags: [推测解码, LLM推理, GPU优化]

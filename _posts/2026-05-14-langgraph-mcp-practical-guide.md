@@ -3,12 +3,12 @@ layout: post
 title: "LangGraph + MCP：构建可恢复的 Agent 工作流"
 subtitle: "状态机负责执行语义，协议负责外部能力边界"
 date: 2026-05-14
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: model-serving-agents
-series_order: 40
-technology_year: 2025
+series_order: 50
+technology_year: 2024
 tags: [工程实践]
 ---
 

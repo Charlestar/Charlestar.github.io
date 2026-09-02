@@ -3,11 +3,11 @@ layout: post
 title: "GPU 互联拓扑：数据怎样从 HBM 走到另一张 GPU 与远端 NIC"
 subtitle: "从板内互联、PCIe 层级到跨节点 RDMA，建立可验证的数据路径模型"
 date: 2026-08-25 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 1
+series_order: 10
 technology_year: 2000
 mathjax: true
 tags: [分布式训练, GPU优化]

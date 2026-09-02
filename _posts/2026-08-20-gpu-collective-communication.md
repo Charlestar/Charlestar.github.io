@@ -3,11 +3,11 @@ layout: post
 title: "Collective Communication：AllReduce、AllGather、ReduceScatter 与 All-to-All"
 subtitle: "从 Tensor 所有权和通信量出发，理解分布式训练中的数据重排"
 date: 2026-08-20 09:00:00 +0800
-last_modified_at: 2026-09-01
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 5
+series_order: 30
 technology_year: 2015
 mathjax: true
 tags: [分布式训练, GPU优化]

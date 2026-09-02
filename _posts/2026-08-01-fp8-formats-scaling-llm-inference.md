@@ -3,11 +3,11 @@ layout: post
 title: "FP8 推理：E4M3、E5M2、Scale 与 Tensor Core 到底怎样配合"
 subtitle: "分清权重存储、Activation 量化、GEMM、KV Cache 与通信的五条低精度路径"
 date: 2026-08-01 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: gpu-runtime-precision
-series_order: 30
+series_order: 20
 technology_year: 2022
 mathjax: true
 tags: [模型量化, GPU优化, LLM推理]

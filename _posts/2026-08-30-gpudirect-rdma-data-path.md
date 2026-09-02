@@ -3,11 +3,11 @@ layout: post
 title: "GPUDirect RDMA：网卡如何直接访问 GPU Memory"
 subtitle: "从 PCIe BAR、内存注册与 rkey 到有序完成和可恢复数据面"
 date: 2026-08-30 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 3
+series_order: 20
 technology_year: 2012
 mathjax: true
 tags: [分布式训练, GPU优化]

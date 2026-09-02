@@ -7,8 +7,8 @@ last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 30
-technology_year: 2019
+series_order: 50
+technology_year: 2018
 mathjax: true
 tags: [分布式训练, GPU优化]
 ---

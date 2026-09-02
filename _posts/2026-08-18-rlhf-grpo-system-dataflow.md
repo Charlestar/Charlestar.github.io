@@ -3,11 +3,11 @@ layout: post
 title: "RLHF/GRPO 系统数据流：一次训练迭代里四类模型怎样协作"
 subtitle: "从 Policy Snapshot、Rollout 与 Reward，到 Advantage、参数更新和一致性边界"
 date: 2026-08-18 09:00:00 +0800
-last_modified_at: 2026-09-01
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 60
+series_order: 80
 technology_year: 2022
 mathjax: true
 tags: [分布式训练, LLM推理, 工程实践]

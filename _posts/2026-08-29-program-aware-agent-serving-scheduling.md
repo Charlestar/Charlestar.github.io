@@ -3,11 +3,11 @@ layout: post
 title: "Program-Aware Serving：Agent 等待工具时，GPU 状态该放在哪里"
 subtitle: "从 Call 依赖、PLAS/ATLAS 调度到 KV Preserve、Swap 与 Recompute，理解 Agent 工作流的推理数据面"
 date: 2026-08-29 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: model-serving-agents
-series_order: 50
+series_order: 40
 technology_year: 2024
 mathjax: true
 tags: [LLM推理, 推理调度, KV Cache]

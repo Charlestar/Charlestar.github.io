@@ -2,12 +2,13 @@
 layout: post
 title: "DSpark：用置信度决定推测解码该验证多远"
 subtitle: "从半自回归草稿、前缀存活概率到 SGLang Ragged Verification"
-date: 2026-06-11 09:00:00 +0800
+date: 2026-07-06 09:00:00 +0800
+permalink: /2026/06/11/dspark-confidence-scheduled-speculative-decoding/
 last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: speculative-decoding
-series_order: 70
+series_order: 80
 technology_year: 2026
 mathjax: true
 tags: [推测解码, SGLang, LLM推理]

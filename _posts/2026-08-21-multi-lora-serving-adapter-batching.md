@@ -3,11 +3,11 @@ layout: post
 title: "Multi-LoRA Serving：一份 Base Model 怎样服务不同 Adapter"
 subtitle: "从低秩增量、异构批处理到 Adapter Cache，理解多租户推理的计算与隔离边界"
 date: 2026-08-21 09:00:00 +0800
-last_modified_at: 2026-08-31
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: model-serving-agents
-series_order: 10
+series_order: 30
 technology_year: 2023
 mathjax: true
 tags: [LLM推理, 推理调度, GPU优化]

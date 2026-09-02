@@ -13,6 +13,7 @@ const warnings = [];
 const seriesText = existsSync(seriesFile) ? readFileSync(seriesFile, 'utf8') : '';
 const seriesIds = new Set([...seriesText.matchAll(/^\s*- id:\s*([a-z][a-z0-9-]+)\s*$/gm)].map(match => match[1]));
 const seriesPositions = new Map();
+const seriesTimelines = new Map();
 const tagsText = existsSync(tagsFile) ? readFileSync(tagsFile, 'utf8') : '';
 const tagIds = new Set(
   [...tagsText.matchAll(/^\s*- id:\s*(.+?)\s*$/gm)]
@@ -111,6 +112,11 @@ for (const name of posts) {
         seriesPositions.set(position, name);
       }
     }
+    if (seriesOrder && technologyYear) {
+      const timeline = seriesTimelines.get(series) ?? [];
+      timeline.push({ name, order: Number(seriesOrder), year: Number(technologyYear) });
+      seriesTimelines.set(series, timeline);
+    }
   } else if (seriesOrder || technologyYear) {
     errors.push(`${name}: series_order and technology_year require series`);
   }
@@ -200,6 +206,20 @@ for (const name of posts) {
   }
 }
 
+for (const [series, timeline] of seriesTimelines) {
+  timeline.sort((left, right) => left.order - right.order);
+  for (let index = 1; index < timeline.length; index += 1) {
+    const previous = timeline[index - 1];
+    const current = timeline[index];
+    if (current.year < previous.year) {
+      errors.push(
+        `${current.name}: ${series} technology_year ${current.year} goes backward after ` +
+          `${previous.name} (${previous.year}) according to series_order`,
+      );
+    }
+  }
+}
+
 for (const tag of tagIds) {
   const count = tagUsage.get(tag) ?? 0;
   if (count === 0) errors.push(`_data/tags.yml: unused tag ${tag}`);
@@ -214,4 +234,4 @@ if (errors.length) {
   process.exit(1);
 }
 
-console.log(`Audited ${posts.length} posts, ${seriesIds.size} series, and ${tagIds.size} tags: metadata, taxonomy, headings, code/math fences, control characters, local images, and residual markers passed.`);
+console.log(`Audited ${posts.length} posts, ${seriesIds.size} series, and ${tagIds.size} tags: metadata, taxonomy, chronological series order, headings, code/math fences, control characters, local images, and residual markers passed.`);

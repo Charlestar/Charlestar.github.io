@@ -3,12 +3,12 @@ layout: post
 title: "MoE 与推测解码：计算、通信和接受率的联合优化"
 subtitle: "从专家散射看清为什么验证更多 token 可能反而更慢"
 date: 2026-05-29 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: speculative-decoding
-series_order: 60
-technology_year: 2026
+series_order: 50
+technology_year: 2025
 mathjax: true
 tags: [推测解码, MoE, 专家并行]
 ---

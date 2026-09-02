@@ -3,12 +3,12 @@ layout: post
 title: "推测解码：从拒绝采样到工程实践"
 subtitle: "用并行验证减少大模型的串行解码轮次"
 date: 2026-05-12
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: speculative-decoding
 series_order: 10
-technology_year: 2023
+technology_year: 2022
 mathjax: true
 tags: [推测解码, LLM推理]
 ---

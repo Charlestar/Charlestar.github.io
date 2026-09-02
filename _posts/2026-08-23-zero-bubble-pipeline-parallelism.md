@@ -3,11 +3,11 @@ layout: post
 title: "Zero-Bubble Pipeline Parallel：为什么 Weight Gradient 可以延后计算"
 subtitle: "从 Backward 依赖拆分、显存生命周期到优化器版本边界，理解接近零气泡的同步流水线"
 date: 2026-08-23 09:00:00 +0800
-last_modified_at: 2026-09-01
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 35
+series_order: 110
 technology_year: 2024
 mathjax: true
 tags: [分布式训练, GPU优化]

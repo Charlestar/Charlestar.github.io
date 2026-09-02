@@ -3,11 +3,11 @@ layout: post
 title: "Sequence Parallel 与 Context Parallel：Token 维到底怎样切"
 subtitle: "从 LayerNorm Activation 分片到跨卡 Attention，厘清 SP、CP、Ring 与 All-to-All 的边界"
 date: 2026-08-14 09:00:00 +0800
-last_modified_at: 2026-08-17
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 40
+series_order: 90
 technology_year: 2022
 mathjax: true
 tags: [分布式训练, 注意力机制, GPU优化]

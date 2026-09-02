@@ -7,8 +7,8 @@ last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: moe-communication
-series_order: 20
-technology_year: 2017
+series_order: 10
+technology_year: 2020
 mathjax: true
 tags: [MoE, 专家并行, 分布式推理]
 ---

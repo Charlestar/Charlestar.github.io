@@ -7,8 +7,8 @@ last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-inference
-series_order: 50
-technology_year: 2025
+series_order: 20
+technology_year: 2024
 mathjax: true
 tags: [分布式推理, 推理调度, LLM推理]
 ---

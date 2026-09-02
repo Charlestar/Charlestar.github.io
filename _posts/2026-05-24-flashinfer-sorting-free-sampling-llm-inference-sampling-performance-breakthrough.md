@@ -3,12 +3,12 @@ layout: post
 title: "FlashInfer Sorting-Free Sampling：无需显式排序的 GPU 采样"
 subtitle: "从目标分布到 Dual Pivot Rejection Sampling"
 date: 2026-05-24 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: gpu-runtime-precision
 series_order: 80
-technology_year: 2026
+technology_year: 2025
 mathjax: true
 tags: [GPU优化, FlashInfer, LLM推理]
 ---

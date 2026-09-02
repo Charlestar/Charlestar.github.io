@@ -3,11 +3,11 @@ layout: post
 title: "异步连续批处理：CPU/GPU 重叠与正确同步"
 subtitle: "沿着相邻两个 Engine Step 拆解调度流水线"
 date: 2026-05-16 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: serving-scheduling
-series_order: 40
+series_order: 60
 technology_year: 2026
 mathjax: true
 tags: [推理调度, GPU优化, LLM推理]

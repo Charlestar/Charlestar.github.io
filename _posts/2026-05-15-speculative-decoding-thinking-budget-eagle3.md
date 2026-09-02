@@ -3,11 +3,11 @@ layout: post
 title: "推理模型的推测解码：Thinking Budget 与 EAGLE-3"
 subtitle: "把生成工作量与执行效率分开优化"
 date: 2026-05-15 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: speculative-decoding
-series_order: 30
+series_order: 40
 technology_year: 2025
 mathjax: true
 tags: [推测解码, EAGLE, LLM推理]

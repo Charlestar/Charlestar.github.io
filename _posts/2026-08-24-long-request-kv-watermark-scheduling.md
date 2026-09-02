@@ -3,11 +3,11 @@ layout: post
 title: "长请求治理：Chunked Prefill 之后，KV Cache 怎样避免被长输出占满"
 subtitle: "从输入公平调度、动态 KV 准入到高水位保护，理解长尾请求的完整生命周期"
 date: 2026-08-24 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: serving-scheduling
-series_order: 55
+series_order: 30
 technology_year: 2023
 mathjax: true
 tags: [LLM推理, 推理调度, KV Cache]

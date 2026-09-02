@@ -3,11 +3,11 @@ layout: post
 title: "Tensor Parallel：怎样把一个 Transformer Layer 切到多张 GPU"
 subtitle: "从 Column/Row Parallel MLP 到 Attention、Sequence Parallel 与二维设备网格"
 date: 2026-08-08 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
-series_order: 20
+series_order: 60
 technology_year: 2019
 mathjax: true
 tags: [分布式训练, GPU优化]

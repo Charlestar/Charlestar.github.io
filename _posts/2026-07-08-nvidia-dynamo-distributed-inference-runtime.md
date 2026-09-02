@@ -7,7 +7,7 @@ last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-inference
-series_order: 30
+series_order: 40
 technology_year: 2025
 mathjax: true
 tags: [分布式推理, Kubernetes, KV Cache]

@@ -3,12 +3,12 @@ layout: post
 title: "CUDA Graph：把动态 LLM Serving 装进可重放的静态执行图"
 subtitle: "从 Kernel Launch 开销到 Batch Bucket、静态地址与 Piecewise Capture"
 date: 2026-07-29 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: gpu-runtime-precision
 series_order: 10
-technology_year: 2019
+technology_year: 2018
 mathjax: true
 tags: [GPU优化, vLLM, LLM推理]
 ---
