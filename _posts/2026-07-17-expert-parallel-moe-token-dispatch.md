@@ -3,7 +3,7 @@ layout: post
 title: "Expert Parallel：MoE Token 为什么要两次穿过 GPU 网络"
 subtitle: "从 EP 分组、All-to-All 通信量到 Prefill/Decode 的并行选择"
 date: 2026-07-17 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: moe-communication
@@ -86,7 +86,7 @@ t6 → e2, e5
 t7 → e0, e3
 ```
 
-原来只有 8 个 token，但 Top-2 产生 16 个 **expert assignments**。EP 通信和 expert GEMM 的工作单位不是原 token 数，而是 assignment 数：
+原来只有 8 个 token，但 Top-2 产生 16 个 **expert assignments**。Expert GEMM 的工作单位不是原 token 数，而是 assignment 数：
 
 $$
 N_a = N_t \times k
@@ -154,33 +154,40 @@ $$
 C_{ij} = \text{rank }i\text{ 发往 rank }j\text{ 的 assignment 数}
 $$
 
-理想均匀时，$C_{ij}$ 大致接近 $N_a/P_e^2$；实际可能出现某一列特别大，说明一个 destination 拥有热点 experts。该 rank 不仅收到更多字节，还要执行更大的 expert GEMM，成为所有 source 的尾部延迟。
+理想均匀时，按 assignment 展开的 $C_{ij}$ 大致接近 $N_a/P_e^2$；实际可能出现某一列特别大，说明一个 destination 拥有热点 experts。该 rank 不仅收到更多工作，还通常要接收更多字节、执行更大的 expert GEMM，成为所有 source 的尾部延迟。这里的 $C_{ij}$ 是路由工作量，不一定等于物理传输的 hidden-state 行数：若同一 token 选中的多个 experts 位于同一 destination rank，DeepEP/Flex 一类 dispatcher 可以只发送一份 hidden state，再在目的端展开给这些 experts。
 
 通信前往往还有一轮 count exchange 或对等同步，让接收端分配/定位 buffer。专用 dispatcher 会把元数据交换、payload 传输、GPU 侧同步和 permutation 尽量合并，但动态大小不会凭空消失。
 
-## 通信量应该按 assignment 估算
+## 先按 assignment-expanded 口径估算通信量
 
-hidden size 为 $H$，传输 dtype 为 $b$ bytes，Top-$k$ 为 $k$。若忽略元数据，一次 dispatch 的逻辑 payload 近似为：
+hidden size 为 $H$，传输 dtype 为 $b$ bytes，Top-$k$ 为 $k$。若按每个 assignment 独立展开 hidden state，一次 dispatch 的 hidden-state 逻辑字节数近似为：
 
 $$
 V_{dispatch} \approx N_t \times k \times H \times b
 $$
 
-combine 返回相同形状的 expert output，因此两次总逻辑 payload 近似：
+若 combine 也逐 assignment 返回相同形状的 expert output，两次往返的 hidden-state 逻辑字节数近似为：
 
 $$
 V_{roundtrip}
 \approx 2N_tkHb
 $$
 
-并非所有 assignment 都跨设备。若 expert 选择与放置近似均匀，本地比例约为 $1/P_e$，真正进入互联的部分约为：
+并非所有 assignment 都跨设备。若 expert 选择与放置近似均匀，本地比例约为 $1/P_e$，在“每个 assignment 独立传输”的估算下，跨 rank 的端到端 hidden-state 逻辑字节数约为：
 
 $$
 V_{network}
 \approx 2N_tkHb\left(1-\frac{1}{P_e}\right)
 $$
 
-这是容量估算，不是精确线速模型。还需要加入：
+这是 assignment-expanded 容量估算，不是物理链路字节的严格上界：同 destination 去重会使它降低，元数据、对齐和分层转发又可能增加链路流量。若 dispatcher 对同一 token 的同 rank 多 expert 命中做去重，令 $D_t$ 为 token $t$ 的不同远端 destination rank 集合，则 dispatch 的 hidden-state 主体更接近：
+
+$$
+V_{dispatch,network}
+\approx H b\sum_t |D_t|
+$$
+
+而不是固定的 $N_tkHb$。反方向若在 expert rank 先完成本地加权归并，combine 也可以复用同样的去重机会。除此之外还需要加入：
 
 - expert id、offset 和 router weight；
 - padding 或 alignment；
@@ -205,7 +212,7 @@ V_{combine}
 \approx 58.7\text{ MB}
 $$
 
-单层一次往返已有约 88 MB 逻辑数据；模型包含许多 MoE layers 时，互联很容易进入关键路径。FP8 dispatch 能减少发送字节，但必须连同量化精度、scale 布局和端到端耗时一起验证。
+在逐 assignment 展开的口径下，单层一次往返的 hidden-state 逻辑字节约为 88 MB；实际链路字节还取决于本地命中、同 destination 去重、元数据和转发路径。模型包含许多 MoE layers 时，互联仍很容易进入关键路径。FP8 dispatch 能减少发送字节，但必须连同量化精度、scale 布局和端到端耗时一起验证。
 
 ## Combine 不是简单把结果发回来
 
@@ -524,7 +531,7 @@ Expert Parallel 通过“每个 rank 只保存部分 experts”解决 MoE 权重
 
 这条数据路径可以归纳为五个判断：
 
-1. EP 的工作单位是 `token × Top-k` 的 assignment，而不是原 token；
+1. Expert 计算的工作单位是 `token × Top-k` 的 assignment；通信 payload 还取决于本地命中和同 destination 去重；
 2. 路由动态决定 All-to-All-v 的 count matrix，最热 destination 往往决定尾延迟；
 3. EP size 增大能省权重显存，却提高远端比例、peer 数与小 GEMM 风险；
 4. Prefill 需要吞吐路径，Decode 需要低延迟路径，不能用同一组大 batch 数据下结论；

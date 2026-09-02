@@ -3,7 +3,7 @@ layout: post
 title: "Wide EP：当 MoE Expert Parallel 横跨几十张 GPU"
 subtitle: "从 Attention DP、跨节点 All-to-All 到 P/D 两套并行布局"
 date: 2026-07-26 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: moe-communication
@@ -257,7 +257,7 @@ $$
 
 若 experts 均匀分布，assignment 在本地 GPU 的概率约 $1/P_e$。一个 8-GPU 节点在 $P_e$ ranks 中所占比例为 $8/P_e$，因此节点内命中比例也会随 EP 变宽下降，除非 group-limited routing 或副本 placement 提高 locality。
 
-跨节点逻辑 payload 近似：
+若按每个 assignment 独立展开 hidden state，跨节点的端到端 hidden-state 逻辑字节数近似为：
 
 $$
 V_{inter}
@@ -265,7 +265,7 @@ V_{inter}
 \left(1-\frac{G_{local}}{P_e}\right)
 $$
 
-其中 $G_{local}$ 是同节点 EP ranks 数，$b$ 是 dispatch dtype bytes。Combine 再产生一轮返回 traffic。这个公式忽略路由相关性和副本选择，但能说明 Wide EP 为什么必须把网络放进第一层容量模型。
+其中 $G_{local}$ 是同节点 EP ranks 数，$b$ 是 dispatch dtype bytes。Combine 再产生一轮返回 traffic。这个公式还忽略同一 token 的多个 experts 落到同一远端 rank/转发域时可复用 hidden-state payload，也没有计入元数据、对齐与分层转发，因此不能替代实际 NIC bytes；它只是 assignment-expanded 口径，说明 Wide EP 为什么必须把网络放进第一层容量模型。
 
 ## Flat All-to-All 很快遇到 peer scale 问题
 
@@ -406,20 +406,20 @@ sequence owner / Attention DP rank
 
 ## 网络容量怎样估算
 
-设每秒经过 MoE layers 的 token rate 为 $Q$，MoE layer 数为 $L_m$，Top-$k$ 为 $k$，hidden size 为 $H$，dispatch/combine 分别为 $b_d,b_c$ bytes。全局逻辑网络数据率约为：
+设每秒经过 MoE layers 的 token rate 为 $Q$，MoE layer 数为 $L_m$，Top-$k$ 为 $k$，hidden size 为 $H$，dispatch/combine 分别为 $b_d,b_c$ bytes。按 assignment 展开的 hidden-state 逻辑数据率为：
 
 $$
 B_{logical}
 =Q L_m k H(b_d+b_c)
 $$
 
-跨节点比例为 $\rho_{inter}$，则：
+跨节点 assignment 比例为 $\rho_{inter}$，则相同口径下为：
 
 $$
 B_{inter}\approx\rho_{inter}B_{logical}
 $$
 
-实际网络还要加入 metadata、padding、协议开销和不均衡，并考虑双向/rail 分布。容量规划不能只用全集群 aggregate bandwidth，因为最热 NIC/rank 决定瓶颈：
+实际网络一方面要加入 metadata、padding、协议开销、分层转发和不均衡，并考虑双向/rail 分布；另一方面，route-aware dispatcher 对同一 token 的同 destination 命中去重后，hidden-state payload 又可能低于这个 assignment-expanded 估算。容量规划必须用真实 routing trace 与 NIC counters 校准，也不能只用全集群 aggregate bandwidth，因为最热 NIC/rank 决定瓶颈：
 
 $$
 B_{required,rail}

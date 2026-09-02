@@ -3,7 +3,7 @@ layout: post
 title: "DeepEP：把 MoE 的 Dispatch 与 Combine 做成专用数据面"
 subtitle: "理解变长通信、两级互联、低延迟路径、FP8 传输与计算重叠"
 date: 2026-07-23 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: moe-communication
@@ -253,9 +253,9 @@ DeepEP 是快速演进的开源项目。当前仓库说明的 V2 有几项结构
 
 ## FP8 Dispatch 减少的是 payload，不是全部成本
 
-若 hidden states 原本以 BF16 传输，每元素 2 bytes；使用 FP8 可把主体 payload 降到约一半：
+若 hidden states 原本以 BF16 传输，每元素 2 bytes；使用 FP8 可把同一传输布局下的主体 payload 降到约一半。
 
-若 $N_a=N_tk$ 为 assignment 数：
+先用按 assignment 展开的 hidden-state 逻辑字节口径说明精度差异。若 $N_a=N_tk$ 为 assignment 数：
 
 $$
 V_{BF16}=2N_aH
@@ -265,7 +265,7 @@ $$
 V_{FP8}\approx N_aH + V_{scale}
 $$
 
-其中 `scale` 的数量取决于量化粒度。DeepEP 接口可以让 dispatch 输入由 data 与 scale factors 组成，combine 仍可使用 BF16，从而优先压缩跨网络的 expert 输入。
+其中 `scale` 的数量取决于量化粒度。这个 $N_aH$ 不是 DeepEP 必然发送的物理行数：若同一 token 的多个 experts 位于同一 destination rank，route-aware dispatcher 可以复用一份 hidden state；实际主体字节应按不同 destination 上的 token 副本数计算。DeepEP 接口可以让 dispatch 输入由 data 与 scale factors 组成，combine 仍可使用 BF16，从而优先压缩跨网络的 expert 输入。
 
 但端到端收益还要扣除：
 
