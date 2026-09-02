@@ -3,7 +3,7 @@ layout: post
 title: "NVIDIA Dynamo：把多套推理引擎组织成一个系统"
 subtitle: "从请求路由、KV 状态到 P/D 扩缩容与 Kubernetes 编排"
 date: 2026-07-08 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-inference
@@ -172,7 +172,7 @@ Least-loaded 每次把请求发往空闲 worker，多轮会话可能在副本间
 
 ### Event-backed Index
 
-Worker 在 KV block allocate/store/free/evict 时发布事件，Router/Indexer 用这些事件维护全局 prefix registry，常以 radix/prefix structure 进行匹配：
+Worker 在 KV block 写入或移除时发布 `stored` / `removed` 事件；Router 另通过请求生命周期跟踪 active block，Indexer 再用这些状态维护全局 prefix registry，常以 radix/prefix structure 进行匹配：
 
 ```text
 worker A: block stored(hash h1, h2, h3)
@@ -592,8 +592,8 @@ Dynamo 不替代 vLLM、SGLang 或 TensorRT-LLM，也不让它们的功能差异
 
 - [NVIDIA Dynamo 官方仓库](https://github.com/ai-dynamo/dynamo)
 - [Dynamo Overall Architecture](https://docs.nvidia.com/dynamo/dev/knowledge-base/overview)
-- [Dynamo Routing Concepts](https://docs.nvidia.com/dynamo/latest/components/router/routing-concepts)
-- [Dynamo Planner](https://docs.nvidia.com/dynamo/latest/components/planner)
+- [Dynamo Routing Concepts](https://docs.nvidia.com/dynamo/knowledge-base/modular-components/router/routing-concepts)
+- [Dynamo Planner](https://docs.nvidia.com/dynamo/knowledge-base/modular-components/planner/planner-guide)
 - [Dynamo KVBM Design](https://docs.nvidia.com/dynamo/v1.0.1/design-docs/component-design/kvbm-design)
-- [Dynamo Disaggregated Serving](https://docs.dynamo.nvidia.com/dynamo/dev/kubernetes/disaggregated-serving/overview)
+- [Dynamo Disaggregated Serving](https://docs.nvidia.com/dynamo/dev/kubernetes/disaggregated-serving/overview)
 - [Introducing NVIDIA Dynamo（2025）](https://developer.nvidia.com/blog/introducing-nvidia-dynamo-a-low-latency-distributed-inference-framework-for-scaling-reasoning-ai-models/)

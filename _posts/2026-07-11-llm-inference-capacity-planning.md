@@ -3,7 +3,7 @@ layout: post
 title: "LLM 推理容量规划：从请求 Trace 推到 GPU 数量"
 subtitle: "把 ISL、OSL、KV Cache、P/D Goodput 与扩容提前量放进同一张账"
 date: 2026-07-11 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-inference
@@ -621,7 +621,7 @@ scale thresholds and cooldown
 
 ## 运行时指标怎样反哺模型
 
-以 vLLM 为例，当前版本提供 running/waiting requests、KV cache usage、prefix query/hit、preemption、prompt/generation tokens 和 iteration tokens 等指标。容量控制可以形成以下诊断：
+以 vLLM 为例，当前版本提供 running/waiting requests、KV cache usage、prefix query/hit、prompt/generation tokens、请求时延与长度等指标。容量控制可以形成以下诊断：
 
 ```text
 waiting ↑ + KV low     → compute/queue bottleneck
@@ -726,6 +726,6 @@ LLM 推理容量规划不是用 GPU 峰值 tokens/s 除以业务 QPS，而是从
 - [DistServe：Per-GPU Goodput 与 P/D Placement](https://www.usenix.org/conference/osdi24/presentation/zhong-yinmin)
 - [vLLM Serving Benchmark CLI](https://github.com/vllm-project/vllm/blob/main/docs/benchmarking/cli.md)
 - [vLLM Metrics](https://docs.vllm.ai/en/latest/design/metrics/)
-- [Dynamo Profiler Guide](https://docs.nvidia.com/dynamo/latest/components/profiler/profiler-guide)
-- [Dynamo Planner Guide](https://docs.nvidia.com/dynamo/latest/components/planner/planner-guide)
-- [Dynamo：用 AIConfigurator 选择部署配置](https://docs.nvidia.com/dynamo/dev/cli/model-deployment/sizing-with-ai-configurator)
+- [Dynamo Profiler Guide](https://docs.nvidia.com/dynamo/knowledge-base/modular-components/profiler/profiler-guide)
+- [Dynamo Planner Guide](https://docs.nvidia.com/dynamo/knowledge-base/modular-components/planner/planner-guide)
+- [AIConfigurator 官方仓库](https://github.com/ai-dynamo/aiconfigurator)

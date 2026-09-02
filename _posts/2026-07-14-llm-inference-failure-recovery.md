@@ -3,7 +3,7 @@ layout: post
 title: "分布式 LLM 推理故障恢复：一条流式请求怎样活下来"
 subtitle: "从健康检测、请求迁移到 KV 状态、优雅下线与过载保护"
 date: 2026-07-14 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-inference
@@ -599,12 +599,12 @@ failure_reason + recovery_action
 
 ## 参考资料
 
-- [NVIDIA Dynamo: Fault Tolerance](https://docs.nvidia.com/dynamo/latest/user-guides/fault-tolerance)
-- [NVIDIA Dynamo: Request Migration](https://docs.nvidia.com/dynamo/latest/user-guides/fault-tolerance/request-migration)
-- [NVIDIA Dynamo: Request Cancellation](https://docs.nvidia.com/dynamo/latest/user-guides/fault-tolerance/request-cancellation)
-- [NVIDIA Dynamo: Health Checks](https://docs.nvidia.com/dynamo/dev/observability/health-checks)
-- [NVIDIA Dynamo: Graceful Shutdown Architecture](https://docs.nvidia.com/dynamo/dev/knowledge-base/design-documents/fault-tolerance/graceful-shutdown-architecture)
-- [NVIDIA Dynamo: Request Rejection Architecture](https://docs.nvidia.com/dynamo/dev/knowledge-base/design-documents/fault-tolerance/request-rejection-architecture)
+- [NVIDIA Dynamo: Fault Tolerance](https://docs.nvidia.com/dynamo/dev/kubernetes/fault-tolerance/overview)
+- [NVIDIA Dynamo: Request Migration](https://docs.nvidia.com/dynamo/dev/kubernetes/fault-tolerance/request-migration)
+- [NVIDIA Dynamo: Request Cancellation Architecture](https://docs.nvidia.com/dynamo/dev/knowledge-base/concepts/fault-tolerance/request-cancellation-architecture)
+- [NVIDIA Dynamo: Health Checks](https://docs.nvidia.com/dynamo/dev/reference/observability/health-checks)
+- [NVIDIA Dynamo: Graceful Shutdown Architecture](https://docs.nvidia.com/dynamo/dev/knowledge-base/concepts/fault-tolerance/graceful-shutdown-architecture)
+- [NVIDIA Dynamo: Request Rejection Architecture](https://docs.nvidia.com/dynamo/dev/knowledge-base/concepts/fault-tolerance/request-rejection-architecture)
 - [Kubernetes: Disruptions](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/)
 - [Kubernetes: Pod Lifecycle](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)
 - [Kubernetes: Configure a PodDisruptionBudget](https://kubernetes.io/docs/tasks/run-application/configure-pdb/)

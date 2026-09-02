@@ -3,7 +3,7 @@ layout: post
 title: "llm-d：Kubernetes 原生分布式 LLM 推理栈"
 subtitle: "沿一条请求理解智能路由、KV Cache 与 Prefill/Decode 解耦"
 date: 2026-06-01 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-inference
@@ -525,7 +525,7 @@ llm-d 的“云原生”价值，不是把模型塞进 YAML，而是让 Kubernet
 ## 参考资料
 
 - [llm-d 官方仓库](https://github.com/llm-d/llm-d)
-- [llm-d v0.8 Architecture](https://llm-d.ai/docs/architecture)
+- [llm-d v0.9 Architecture](https://llm-d.ai/docs/architecture)
 - [llm-d Router 与 EPP](https://llm-d.ai/docs/architecture/core/router)
 - [InferencePool](https://llm-d.ai/docs/architecture/core/inferencepool)
 - [Prefix-Cache Aware Routing](https://llm-d.ai/docs/architecture/advanced/kv-management/prefix-cache-aware-routing)
