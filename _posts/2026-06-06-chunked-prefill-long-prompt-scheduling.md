@@ -3,7 +3,7 @@ layout: post
 title: "Chunked Prefill：长 Prompt 为什么要切片执行"
 subtitle: "从 Prefill/Decode 干扰到 Token Budget 与 Stall-Free Scheduling"
 date: 2026-06-06 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -286,13 +286,13 @@ Chunk 越大，GPU 对 prefill 的效率可能更高，长 prompt 更快完成�
 
 ## KV Cache 分配必须跟着 Chunk 增长
 
-完整 prefill 可以在开始前为整段 prompt 估算 KV 空间；chunked prefill 则让请求逐轮增长。假设 block size 为 16 token，本轮为请求增加 1000 token，至少需要约：
+完整 prefill 可以在开始前为整段 prompt 估算 KV 空间；chunked prefill 则让请求逐轮增长。假设 block size 为 16 token，并且请求此前恰好停在 block 边界，本轮增加 1000 token 需要：
 
 $$
 \left\lceil\frac{1000}{16}\right\rceil=63
 $$
 
-个新的逻辑位置对应到物理 KV blocks，实际还要考虑尾块是否已有空位、多组 KV cache 与混合 attention 类型。
+个新的物理 KV blocks。若此前最后一个 block 还有空位，新分配数量可能少于 63；实际还要考虑尾块余量、多组 KV cache 与混合 attention 类型。这里的 63 是边界对齐条件下的例子，不是所有请求的固定下界。
 
 调度器通常要先 reserve blocks，再把 chunk 交给 worker。若只按第一块的空间接纳大量长请求，可能出现：
 
