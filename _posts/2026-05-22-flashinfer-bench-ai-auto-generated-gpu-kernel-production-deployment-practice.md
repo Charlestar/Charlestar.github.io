@@ -3,7 +3,7 @@ layout: post
 title: "FlashInfer-Bench：AI 生成 GPU Kernel 的评测与上线边界"
 subtitle: "从算子契约、真实 Workload 到运行时替换"
 date: 2026-05-22 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -76,22 +76,25 @@ FlashInfer-Bench 倾向于更具体的 Definition，并避免 optional input 或
 一个概念化定义可以写成：
 
 ```yaml
-name: fused_add_rmsnorm_h4096
+name: rmsnorm_h4096
 op_type: rmsnorm
 axes:
-  batch: {type: var}
-  hidden: {type: const, value: 4096}
+  batch_size: {type: var}
+  hidden_size: {type: const, value: 4096}
 inputs:
-  hidden_states: {shape: [batch, hidden], dtype: bfloat16}
-  residual:      {shape: [batch, hidden], dtype: bfloat16}
-  weight:        {shape: [hidden], dtype: bfloat16}
+  hidden_states: {shape: [batch_size, hidden_size], dtype: bfloat16}
+  weight:        {shape: [hidden_size], dtype: bfloat16}
 outputs:
-  output:         {shape: [batch, hidden], dtype: bfloat16}
-  residual_out:   {shape: [batch, hidden], dtype: bfloat16}
-reference: reference.py
+  output:         {shape: [batch_size, hidden_size], dtype: bfloat16}
+reference: |
+  import torch
+  def run(hidden_states, weight):
+      x = hidden_states.float()
+      inv_rms = torch.rsqrt(x.square().mean(-1, keepdim=True) + 1e-6)
+      return (x * inv_rms * weight.float()).to(hidden_states.dtype)
 ```
 
-这只是说明字段关系，具体 schema 应以当前官方文档为准。
+这里的 `reference` 是内联源码字符串，并在全局命名空间定义 `run`；这只是说明字段关系，精确 Definition 仍应以所用数据集版本和当前官方 schema 为准。
 
 ### Workload：合同的一次真实实例
 
@@ -111,13 +114,13 @@ Workload 给 variable axes 填入具体值，并提供真实或可复现生成�
 Solution 可以来自 CUDA、Triton、CUTLASS、PyTorch 或其他支持的 backend。除源代码外，还要记录：
 
 - 目标 GPU architecture；
-- 软件和库版本约束；
-- 作者是人、模型还是 agent pipeline；
-- 编译配置和依赖；
-- 对应 Definition；
-- 必要的构建入口。
+- 语言与入口函数；对 C++/CUDA Solution，还需声明 `tvm-ffi` 或 `torch` binding（Python/Triton 会忽略该字段）；
+- 作者或生成 agent 的标识，以及对应的 Definition；
+- 内联保存的源文件；
+- 依赖声明；
+- 输出采用 destination-passing 还是返回值约定。
 
-Solution 的函数签名必须与 Definition 对齐，输出也必须是合同声明的 tuple。调用一个已有高性能库并不自动构成违规；是否允许、链接成本如何计算、是否真正生成了自定义 kernel，应由具体比赛或评测规则明确。
+Solution 的函数签名必须与 Definition 对齐。当前 schema 默认采用 destination-passing style：预分配输出作为最后一组参数传给入口函数；显式关闭该选项时，入口函数才通过返回值给出合同声明的一个或多个输出。调用一个已有高性能库并不自动构成违规；是否允许、链接成本如何计算、是否真正生成了自定义 kernel，应由具体比赛或评测规则明确。
 
 ### Evaluation：这次运行发生了什么
 
@@ -127,7 +130,7 @@ Evaluation 记录某个三元组的：
 - 正确性统计；
 - warm-up 与测量后的 latency；
 - reference/baseline 结果；
-- GPU、driver、CUDA、框架和库版本；
+- 硬件标识，以及 CUDA、PyTorch、Triton 等相关库版本快照；
 - 日志与错误信息。
 
 常见状态会区分 `PASSED`、`INCORRECT_SHAPE`、`INCORRECT_DTYPE`、`INCORRECT_NUMERICAL`、`RUNTIME_ERROR` 和 `COMPILE_ERROR`。这样“0 分”不再混成一个结果：agent 可以知道是代码没有编译，还是运行了但语义错误。
@@ -203,7 +206,7 @@ Reference 比较只有在 workload 覆盖错误触发条件时才有效。一个
 
 ## 性能测量怎样避免自欺
 
-正确性通过后，才有资格谈速度。FlashInfer-Bench 为每张 GPU 设置跨进程 device lock，避免两个 benchmark 同时占用设备。候选先执行若干次 untimed warm-up，再用 CUDA event 记录多轮 device-side 时间。
+正确性通过后，才有资格谈速度。FlashInfer-Bench 的 benchmarker 为每张 CUDA 设备建立独立 runner，把候选分配给设备；正式比赛还可用隔离 runner 将每个 solution 放进独立子进程。候选先执行 untimed warm-up，再测量多轮 GPU 时间；具体计时后端取决于版本和配置，例如 MLSys 2026 评测环境使用 CUPTI，而 FlashInfer 的通用计时工具在 CUPTI 不可用时可退回 CUDA event。
 
 仍需明确几个选择：
 
