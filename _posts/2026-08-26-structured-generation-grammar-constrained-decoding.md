@@ -3,7 +3,7 @@ layout: post
 title: "结构化生成：Grammar 怎样约束每一个 Token"
 subtitle: "从 JSON Schema、Regex 与 CFG 到 Token Mask，理解 Constrained Decoding 的正确性与性能边界"
 date: 2026-08-26 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: model-serving-agents
@@ -394,7 +394,7 @@ prefix P
 
 投机解码让 Draft Model 一次提出多个 Token，再由 Target Model 并行验证。Grammar 又要求每个 Token 都基于前一个 Token 推进状态，两者必须正确组合。
 
-假设 Draft 提出：
+最稳妥的实现会让 Draft 与 Target 使用同一份 Grammar 状态：Draft 在每个位置也只从当前合法集合提出 Token，Target 再在同样的约束分布下验证。假设某个实现没有在 Draft 侧施加约束，因而提出：
 
 ```text
 [t1, t2, t3, t4]
@@ -406,12 +406,18 @@ Grammar 需要从当前状态依次检查：
 S0 --t1--> S1 --t2--> S2 --t3--> dead
 ```
 
-那么 `t3` 及其后的 Token 不能被接受，即使 Target Model 的概率检验原本会通过。验证阶段至少要区分两种拒绝原因：
+那么 `t3` 及其后的 Token 不能被接受，即使 Target Model 的概率检验原本会通过；`t4` 也不能越过这个非法前缀继续验证。验证阶段至少要区分两种拒绝原因：
 
 1. Target Model 的接受概率不足；
 2. Draft Token 违反 Grammar。
 
-随后由 Target Model 在状态 `S2` 的合法集合中重新采样。不能先接受整段 Draft，再用最终字符串做 Grammar 校验，那会破坏逐 Token 硬约束。
+随后从状态 `S2` 产生替代 Token。这里还要区分解码模式：Greedy 路径选择 Target 在合法集合中的最高分 Token；随机、要求保持目标分布不变的推测采样，则必须按推测采样的校正分布
+
+$$
+\operatorname{norm}\!\left(\max(0,\ p_G-q_{proposal})\right)
+$$
+
+采样，其中 $p_G$ 是状态 `S2` 下经过 Grammar 约束的 Target 分布，$q_{proposal}$ 是 Draft 实际用于提出该位置 Token 的分布；若 Draft 也正确施加了同一约束，它就是对应的 $q_G$。不能简单地丢弃候选后直接从 $p_G$ 重采样，否则一般会改变目标分布；也不能先接受整段 Draft，再用最终字符串做 Grammar 校验，那会破坏逐 Token 硬约束。
 
 为了性能，系统可以并行计算每个位置的模型 Logits，但 Grammar 状态转换在语义上仍是前缀相关的；实现需要使用扫描、预计算转移或高效的逐 Token Matcher，而不能忽略依赖关系。
 
@@ -650,6 +656,7 @@ Grammar-Constrained Decoding 把“希望模型遵守格式”变成“非法格
 - Willard & Louf, [Efficient Guided Generation for Large Language Models](https://arxiv.org/abs/2307.09702)
 - Dong et al., [XGrammar: Flexible and Efficient Structured Generation Engine for Large Language Models](https://arxiv.org/abs/2411.15100)
 - Li et al. (2026), [XGrammar-2: Dynamic and Efficient Structured Generation Engine for Agentic LLMs](https://arxiv.org/abs/2601.04426)
+- Leviathan et al., [Fast Inference from Transformers via Speculative Decoding](https://proceedings.mlr.press/v202/leviathan23a.html)
 - [XGrammar 官方仓库与文档](https://github.com/mlc-ai/xgrammar)
 - [vLLM Structured Outputs 文档](https://docs.vllm.ai/en/latest/features/structured_outputs/)
 - [XGrammar GHSA-7rgv-gqhr-fxg3 安全公告](https://github.com/mlc-ai/xgrammar/security/advisories/GHSA-7rgv-gqhr-fxg3)

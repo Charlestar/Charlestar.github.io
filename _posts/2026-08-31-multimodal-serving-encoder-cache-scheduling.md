@@ -3,7 +3,7 @@ layout: post
 title: "多模态 Serving：图片进入 LLM 之前发生了什么"
 subtitle: "拆解 Media I/O、Processor、Encoder、Connector、Embedding Cache 与语言模型调度"
 date: 2026-08-31 09:00:00 +0800
-last_modified_at: 2026-08-31
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: model-serving-agents
@@ -195,12 +195,14 @@ tokenizer_revision
 
 ## 7. 动态分辨率怎样变成视觉 Token
 
-固定分辨率模型通常把图片缩放到固定尺寸，再按 Patch 切分。若图片大小为 \(H \times W\)，Patch 大小为 \(p \times p\)，忽略额外特殊 Token 时，视觉 Patch 数大约是：
+固定分辨率模型通常把图片缩放到固定尺寸，再按 Patch 切分。若 Processor 将 \(H \times W\) 的处理后图片分别补齐到最近的 \(p\) 的整数倍，Patch 大小为 \(p \times p\)，忽略额外特殊 Token 时，视觉 Patch 数是：
 
 $$
-N_v \approx \left\lceil \frac{H}{p} \right\rceil
+N_v = \left\lceil \frac{H}{p} \right\rceil
           \left\lceil \frac{W}{p} \right\rceil
 $$
+
+这里的向上取整来自补齐操作，并不是所有视觉编码器的通式：若 Patch Embedding 使用不带 Padding 的步长卷积，数量应按实际处理后尺寸取下整；若 Processor 先 Resize/Crop 到固定可整除尺寸，则直接使用处理后的网格大小。Serving 侧应读取模型 Processor 给出的真实 Grid，而不是仅凭原图宽高套公式。
 
 动态分辨率模型不再让所有图片都产生固定 \(N_v\)。高分辨率文档、长图或宽屏截图会保留更多细节，也会生成更多视觉 Token。Qwen2-VL 将这种能力称为 Naive Dynamic Resolution，并进一步用多模态位置编码表达图片与视频的空间、时间信息。
 
