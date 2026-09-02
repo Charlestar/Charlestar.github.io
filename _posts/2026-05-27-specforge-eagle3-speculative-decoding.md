@@ -3,7 +3,7 @@ layout: post
 title: "SpecForge：把 EAGLE3 从训练样本交付到 SGLang"
 subtitle: "理解特征对齐、Training-Time Test 与草稿模型的部署契约"
 date: 2026-05-27 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -182,6 +182,8 @@ SpecForge 支持两类文本输入：
 
 第二种格式并不意味着可以省略模板配置。SpecForge 仍需知道使用了什么 chat template，才能识别 assistant span 并建立 loss mask。
 
+使用这种预格式化记录时，还必须在运行配置中显式设置 `data.is_preformatted: true`；否则 loader 会把它按对话记录解析。`chat_template` 在这里不是再次渲染文本，而是为 assistant 边界和 loss mask 提供同一份格式契约。
+
 若追求线上接受率，更稳妥的做法是保留输入问题，用目标模型重新生成 assistant 回答，并记录生成参数。这样得到的不是“更高质量答案”的保证，而是更忠实的目标分布样本。
 
 ## 推理模型的数据还要处理隐藏思维边界
@@ -207,17 +209,19 @@ reasoning 模型可能把可见回答与结构化的 `reasoning_content` 分开�
 - 截断后仍然存在有效的监督 token；
 - train/eval 按会话或问题划分，避免同源回答泄漏。
 
-## 在线、离线与解耦训练是在交换不同成本
+## 特征生成时机与部署拓扑是两条不同的轴
 
 EAGLE3 训练既需要 token，也需要目标模型隐藏状态。隐藏状态在哪里生成，决定了整条系统的形态。
 
-| 模式 | 隐藏状态来源 | 优点 | 主要代价 |
-| --- | --- | --- | --- |
-| 离线 | 预先运行目标模型，写入特征分片 | 训练可复现；训练阶段不必常驻目标模型 | 特征文件很大；配置变化后可能需要重做 |
-| 在线 | SGLang 在训练期间生成并发布特征 | 无需保存完整特征集；更容易更新样本 | 目标推理资源必须持续可用；生产与消费速度要匹配 |
-| 解耦 | 独立 producer/consumer 通过传输层交换数据 | 训练和目标推理可分别扩缩容 | 多服务编排、背压与故障恢复更复杂 |
+当前 SpecForge 需要区分“特征何时生成”和“producer/consumer 是否解耦”两件事。在线训练不是与解耦并列的第三种模式：**所有在线训练都采用 disaggregated 拓扑**；离线特征则既能在本地 colocated trainer 中读取，也能通过解耦 producer/consumer 交付。
 
-这里的“在线”不等于把目标模型塞进每个 trainer 进程。当前 SpecForge 架构中，patched SGLang server 负责目标模型推理与其并行方式，trainer consumer 读取发布的特征并进行数据并行训练。两侧之间若使用 Mooncake 等传输后端，还要监控队列深度、特征传输吞吐和过期数据。
+| 组合 | 隐藏状态来源 | 优点 | 主要代价 |
+| --- | --- | --- | --- |
+| 在线 + disaggregated | patched SGLang 在训练期间捕获特征，经 Mooncake 发布给 consumer | 不必长期保存完整特征集；样本可持续更新 | SGLang 与 Mooncake 必须持续可用；要处理背压与故障恢复 |
+| 离线 + local colocated | 预先运行目标模型，把特征分片写入 `hidden_states_path` | 训练可复现；训练时不常驻目标模型 | 特征文件很大；配置变化后通常要重做 |
+| 离线 + disaggregated | 独立 producer 把预计算特征交给 consumer | 特征供给和训练可分别部署、扩缩容 | 多进程编排、共享状态与恢复协议更复杂 |
+
+在在线路径中，patched SGLang server 负责目标模型推理及其并行方式，trainer consumer 读取经 Mooncake 发布的特征并进行数据并行训练；目标模型不会被塞进 trainer。离线 disaggregated 路径还可选择 `shared_dir` 或 Mooncake，具体约束不能与在线路径混用。
 
 选择模式时可以先问三个问题：
 
@@ -297,6 +301,13 @@ deployment:
   trainer:
     nnodes: 1
     nproc_per_node: 8
+  disaggregated:
+    control_dir: outputs/qwen3-8b-eagle3-exp01/control
+    backend: mooncake
+    server_urls:
+      - http://127.0.0.1:30000
+    mooncake_metadata_server: http://127.0.0.1:35880/metadata
+    mooncake_master_server_addr: 127.0.0.1:35551
 ```
 
 具体字段应以当前版本的示例配置和 schema 为准。这里重要的是：目标模型、数据、优化器与部署拓扑被记录在同一份配置中。实验差异可以通过配置 diff 审查，而不是从终端历史里猜测。

@@ -3,7 +3,7 @@ layout: post
 title: "QuantSpec：分层量化 KV Cache 的自推测解码"
 subtitle: "用同一份位平面同时服务 INT4 草稿与 INT8 验证"
 date: 2026-05-21 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -199,10 +199,10 @@ Prefill 完成后，大部分前缀被转换为 $C_U,C_L$，最近至少 $G$ 个
    找到接受前缀，产生修正/额外 token
 
 3. rollback
-   只截断 F2 中被拒绝及其后的 KV
+   只保留已接受候选对应的有效 KV，截断首个拒绝候选及其后的 KV
 
 4. commit
-   接受 token 留在 F2，成为 confirmed
+   提交接受 token 与修正/额外输出；后者的 KV 留待下一次 forward 计算
 
 5. F2 接近容量边界时
    quantize(F1) -> append to upper/lower cache
@@ -235,13 +235,13 @@ Prefill 完成后，大部分前缀被转换为 $C_U,C_L$，最近至少 $G$ 个
 
 ### 5. KV rollback
 
-把 $C_{F_2}$ 的逻辑长度截到已接受前缀，并写入正确 token 对应的 KV。量化历史不受影响。
+把 $C_{F_2}$ 的逻辑长度截到目标模型已经为之计算出有效 KV 的接受前缀；首个被拒候选及其后的候选 KV 都要丢弃。拒绝时采样出的修正 token、以及全接受时产生的额外 token，此刻只是已经提交的输出 token：验证 forward 并没有以它为输入，因此它的 KV 要在下一次 forward（或显式的额外 forward）中计算，不能把被拒候选的 KV 改名后继续使用。量化历史不受影响。
 
 ### 6. Buffer rotation
 
 当 recent 区达到容量条件且本轮验证已经结束，量化稳定的 $C_{F_1}$ 并追加到 $C_U,C_L$；再把 $C_{F_2}$ 中已确认部分向前移动，为下轮候选腾出空间。
 
-这套顺序体现了一个关键不变量：**任何进入不可逆量化历史的 KV，都必须已经由 target path 确认。**
+这套顺序体现了一个关键不变量：**任何进入不可逆量化历史的 KV，都必须对应已经提交的上下文 token，并且由 target path 对该 token 作为输入完成过计算。**
 
 ## 分布正确性应该怎样表述
 

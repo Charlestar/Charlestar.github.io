@@ -3,7 +3,7 @@ layout: post
 title: "DFlash：Block Diffusion 怎样一次生成一整段 Draft"
 subtitle: "从目标隐藏状态、并行块预测到前缀验证，理解扩散式推测解码的收益边界"
 date: 2026-08-27 09:00:00 +0800
-last_modified_at: 2026-09-01
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -78,11 +78,12 @@ $t_{block}$ 并非与块长完全无关，attention、输出投影和采样都�
 
 ## 一个 block 里究竟放了什么
 
-假设上一轮目标验证已经提交了一个可靠 token $a$。DFlash 以它作为 anchor，在后面拼接 $\gamma$ 个 mask：
+假设上一轮目标验证已经提交了一个可靠 token $a$。先固定一个容易混淆的计数约定：DFlash 配置中的 `block_size=b` 包含 anchor 槽位；默认 `sample_from_anchor=false` 时，anchor 不作为预测位，后面只有 $b-1$ 个 mask 候选。若用 $\gamma$ 表示候选数，则 $\gamma=b-1$：
 
 ```text
 输入位置:   [历史上下文 ...] [anchor] [MASK] [MASK] [MASK] [MASK]
-预测目标:                         y1     y2     y3     y4
+槽位计数:                         1      2      3      4      5   (b=5)
+预测目标:                                 y1     y2     y3     y4   (γ=4)
 ```
 
 这些 mask 位置使用非因果的 block 内 attention，可以同时看到 anchor、目标模型注入的上下文特征以及同一 block 的 mask 表示。一次 drafter 前向直接得到各位置的 vocabulary logits：
@@ -194,7 +195,7 @@ $$
 
 它不是说后缀质量无关，而是让优化目标更贴近 expected accepted prefix。实际训练仍需同时观察各深度 accuracy、完整块接受率和平均接受长度，否则可能得到一个只擅长前几个位置的过度保守 drafter。
 
-论文还让 drafter 与 target 共享并冻结 token embedding 和 LM head，只训练 draft Transformer 与相关投影。这样既减少训练参数，也避免另建词表映射破坏 logits 对齐。部署时必须把这种共享关系视作模型兼容性约束。
+论文还让 drafter 与 target 共享并冻结 token embedding 和 LM head，只训练 draft Transformer 与相关投影。这样既减少训练参数，也避免另建词表映射破坏 logits 对齐。后续 DSpark 使用另一种 `sample_from_anchor=true` 约定：anchor 槽位本身也产出第一个 future-token logit，因此相同 `block_size` 会得到 $b$ 个候选。checkpoint 的训练约定与 serving 配置必须一致，不能只看张量 shape 互换两种模式。
 
 ## DFlash、EAGLE-3 与 DSpark 的区别
 
@@ -258,16 +259,17 @@ DFlash 系统中容易把不同 KV 混在一起：
 2. **目标上下文特征**：从若干目标层抽取、融合，作为 drafter 条件；
 3. **draft KV Cache**：保存注入特征与 drafter 自身需要复用的状态。
 
-候选被拒绝时，只能把目标 KV 提交到已接受边界；未接受候选对应的临时 target KV 必须回滚、截断或留在可覆盖的 scratch page。draft 状态也要以同一 commit point 为界。推荐维护显式事务游标：
+候选被拒绝时，只能把目标 KV 提交到已接受边界；未接受候选对应的临时 target KV 必须回滚、截断或留在可覆盖的 scratch page。draft 状态也要以同一 commit point 为界。这里还要把“正式 token 已提交到哪里”和“target KV 已物化到哪里”分成两个游标：
 
 ```text
-committed_pos       目标模型已经确认的位置
+committed_token_end 已验证并进入正式序列的位置（可含本轮修正/bonus token）
+target_kv_end       目标模型已经把 token 当作输入并写出 KV 的位置
 speculated_end      本轮候选末尾
-accepted_end        验证后可提交的末尾
+accepted_draft_end  本轮已接受草稿前缀的末尾
 draft_epoch         draft 状态所属轮次
 ```
 
-只有验证成功后执行 `committed_pos = accepted_end`。请求取消、超时、迁移或 worker 重启时，也按该游标回收所有 speculative pages，避免幽灵引用与显存泄漏。
+只有验证成功后才能推进 `committed_token_end`；本轮由 target logits 产生的修正/bonus token 尚未作为输入计算，因此 `target_kv_end` 通常暂时比它落后一个位置，并在下一轮补齐。请求取消、超时、迁移或 worker 重启时，应按 KV 的实际物化边界回收 speculative pages，避免把拒绝候选页误当成修正 token 的状态，也避免幽灵引用与显存泄漏。
 
 ## CUDA Graph 与 ragged batch 的矛盾
 

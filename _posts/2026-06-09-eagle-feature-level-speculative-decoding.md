@@ -3,7 +3,7 @@ layout: post
 title: "EAGLE：为什么推测解码要预测 Feature"
 subtitle: "从 Feature Uncertainty、Advanced Token 到树形草稿与无损验证"
 date: 2026-06-09 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -405,6 +405,8 @@ temperature 为 0 时，目标模型每步选择 argmax。验证从树根层开�
 4. 某一层没有匹配节点时，提交目标 argmax 作为新 token并结束本轮；
 5. 若一路走到树叶，再使用验证 forward 已经计算出的下一目标 token。
 
+第 4、5 步得到的修正或额外 token 是验证 logits 的采样结果；这次 forward 并没有再把该输出 token 当作输入，所以尚未产生它自己的 KV。它可以立即进入正式 token 序列，但其 KV 要在下一轮 forward（或一次额外 forward）中计算。
+
 例如：
 
 ```text
@@ -468,16 +470,16 @@ $$
 reserve temporary KV slots for all tree nodes
                     │
                     ▼
-target tree-attention forward writes tentative KV
+target tree-attention forward writes tentative KV for tree input nodes
                     │
                     ▼
 verification selects one accepted path
           ┌─────────┴──────────┐
           ▼                    ▼
-commit path KV          reclaim rejected-branch KV
+commit accepted-node KV   reclaim rejected-branch KV
 ```
 
-实现可以通过复制选中节点、块表重映射或临时 arena 回收完成，具体取决于 cache manager。但提交后的逻辑状态必须等价于目标模型只生成了被接受前缀和修正 token。
+实现可以通过复制选中节点、块表重映射或临时 arena 回收完成，具体取决于 cache manager。长期 cache 只能保留目标模型已经以输入身份计算过的已接受节点；修正/额外输出虽然已进入正式序列，其 KV 此刻还不存在，下一轮把它作为输入后才补上。不能把首个拒绝候选的 KV 改名成修正 token 的 KV。
 
 drafter 侧也有自己的 feature/KV 状态。若它展开了 `A-B-D`，目标最终只接受 `A-B` 并改为 `X`，下一轮 drafter 必须从正式路径 `A-B-X` 继续，不能沿 `D` 的预测状态向前滚动。
 
