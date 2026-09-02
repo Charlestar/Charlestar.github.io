@@ -3,7 +3,7 @@ layout: post
 title: "Pipeline Parallel：Micro-batch 怎样流过 Transformer Stages"
 subtitle: "从 GPipe、1F1B 到 Interleaving，理解流水气泡、Activation 生命周期与并行组合"
 date: 2026-08-11 09:00:00 +0800
-last_modified_at: 2026-08-17
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: distributed-training
@@ -51,7 +51,7 @@ $$
 - $m$ 是一个 optimizer step 内的 micro-batch 数；
 - $p_{DP}$ 是 Data Parallel degree。
 
-同一条 pipeline 上的 $m$ 个 micro-batches 使用同一版本参数，分别完成 forward/backward，梯度累加后才执行一次 optimizer step。拆成 micro-batches 的目标不是改变数学 batch，而是让不同 stages 同时处理不同 micro-batches。
+在本文后续讨论的同步 flush schedules 中，同一条 pipeline 上的 $m$ 个 micro-batches 使用同一版本参数，分别完成 forward/backward，梯度累加后才执行一次 optimizer step。拆成 micro-batches 的目标不是改变数学 batch，而是让不同 stages 同时处理不同 micro-batches。
 
 例如 4 个 stages 可以在同一时刻执行：
 
@@ -205,11 +205,19 @@ $$
 V_F=S\times B_{micro}\times H\times bytes(dtype)
 $$
 
-Backward 需要反向传递同 shape 的 activation gradient，因而还有相近的 $V_B$。一次 optimizer step 的逻辑边界流量约为：
+Backward 需要反向传递同 shape 的 activation gradient，因而还有相近的 $V_B$。对**一个逻辑 stage 边界**，一次 optimizer step 的逻辑流量约为：
 
 $$
-V_{step}\approx m(V_F+V_B)
+V_{step,\mathrm{one\ boundary}}\approx m(V_F+V_B)
 $$
+
+若普通 $p$-stage pipeline 的 $p-1$ 个边界具有相同 tensor shape，则把每个边界发送的 payload 相加后，整条 pipeline 的累计逻辑流量近似为：
+
+$$
+V_{step,\mathrm{all\ boundaries}}\approx (p-1)m(V_F+V_B)
+$$
+
+这里统计的是跨各边界发送的 payload 总和，不等同于关键路径时间；virtual/interleaved stages 还要按实际跨越的逻辑边界次数计算。
 
 实际 local bytes 会受到 TP/SP/CP layout 影响。例如 boundary tensor 已沿 sequence 或 hidden sharded 时，每个 rank 只发送自己的 shard；如果下游要求不同 placement，则还可能伴随 AllGather、ReduceScatter 或 layout transform。
 
