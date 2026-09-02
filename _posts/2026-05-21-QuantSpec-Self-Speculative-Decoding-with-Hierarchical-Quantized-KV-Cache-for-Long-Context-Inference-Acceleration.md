@@ -3,7 +3,7 @@ layout: post
 title: "QuantSpec：分层量化 KV Cache 的自推测解码"
 subtitle: "用同一份位平面同时服务 INT4 草稿与 INT8 验证"
 date: 2026-05-21 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -99,12 +99,20 @@ C^{INT8}
 = 2^4 C_U^{INT4} + C_L^{INT4}
 $$
 
-若 INT8 反量化的 scale 和 zero point 分别为 $S^{INT8}$ 与 $Z^{INT8}$：
+若沿用 QuantSpec 论文的记号，把 INT8 反量化的 scale 和浮点域加性偏置分别记为 $S^{INT8}$ 与 $Z^{INT8}$（论文将后者称为 zero point）：
 
 $$
 C^{FP}
 = C^{INT8}S^{INT8}+Z^{INT8}
 $$
+
+这里的加号不是反量化符号写错，而是 zero point 的参数化约定不同。若实现采用更常见的**整数域** zero point $z$，反量化会写成：
+
+$$
+C^{FP}=(C^{INT8}-z)S^{INT8}
+$$
+
+两式在 $Z^{INT8}=-zS^{INT8}$ 时完全等价。换言之，不能只把加号改成减号而仍让 $Z$ 保持原定义；对接 kernel、checkpoint 或量化工具时，必须先确认 metadata 保存的是整数 zero point $z$，还是已经乘过 scale 的浮点偏置 $Z$。
 
 代入后，draft 只加载 $C_U$，target 加载 $C_U$ 和 $C_L$。两条路径共享 bit plane，不需要在每轮开始时把 INT8 重新量化成另一份 INT4 cache。
 

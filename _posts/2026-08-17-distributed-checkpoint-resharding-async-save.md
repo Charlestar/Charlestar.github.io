@@ -3,7 +3,7 @@ layout: post
 title: "Distributed Checkpoint：怎样保存并重分片多维训练状态"
 subtitle: "从 Sharded State Dict、两阶段提交到异步 I/O，构建真正可恢复的训练快照"
 date: 2026-08-17 09:00:00 +0800
-last_modified_at: 2026-08-17
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: distributed-training
@@ -513,4 +513,4 @@ Distributed Checkpoint 的核心不是并行写很多文件，而是把分散的
 - [NVIDIA Megatron Core: Distributed Checkpointing](https://docs.nvidia.com/megatron-core/developer-guide/latest/api-guide/core/dist_checkpointing.html)
 - [NVIDIA Megatron-LM: Megatron Core Quick Start](https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/QuickStart.md)
 - [TorchTitan Checkpointing Guide](https://github.com/pytorch/torchtitan/blob/main/docs/checkpoint.md)
-- [Universal Checkpointing: A Flexible and Efficient Distributed Checkpointing System](https://www.usenix.org/conference/atc25/presentation/lian)
+- [Universal Checkpointing: A Flexible and Efficient Distributed Checkpointing System for Large-Scale DNN Training with Reconfigurable Parallelism](https://www.usenix.org/conference/atc25/presentation/lian)

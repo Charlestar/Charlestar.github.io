@@ -3,7 +3,7 @@ layout: post
 title: "FairBatching：面向 LLM 推理的公平批次形成"
 subtitle: "从延迟契约、进度余量到 Prefill Admission Budget"
 date: 2026-05-17 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -111,7 +111,7 @@ token 3: 150 ms
 
 ## 用时间包络描述服务目标
 
-设请求 $i$ 的 TTFT 目标为 $ttft\_slo_i$，之后每个输出 token 的平均时间目标为 $tpot\_slo_i$。论文为第 $j$ 个 token 构造 deadline：
+设请求 $i$ 的 TTFT 目标为 $ttft\_slo_i$，之后每个输出 token 的平均时间目标为 $tpot\_slo_i$。为避免序号产生 off-by-one，下面严格沿用调度器的零基 output index：$j=0$ 表示第 1 个输出 token，$j=1$ 表示第 2 个。索引为 $j$ 的 token deadline 是：
 
 $$
 token\_ddl_{i,j}
@@ -128,13 +128,13 @@ $$
 - slack 很大，请求此前进展较快，可以暂时把资源让给更紧迫的工作；
 - 每成功生成一个 token，下一个 deadline 沿包络向后移动一个 TPOT。
 
-假设请求在 0 ms 到达，TTFT 目标为 300 ms，TPOT 目标为 50 ms。第 6 个输出 token 的 deadline 是：
+假设请求在 0 ms 到达，TTFT 目标为 300 ms，TPOT 目标为 50 ms。第 1 个输出 token 的索引是 $j=0$，deadline 为 300 ms；第 6 个输出 token 的索引是 $j=5$，所以 deadline 是：
 
 $$
-300 + 6 \times 50 = 600\ \text{ms}
+300 + 5 \times 50 = 550\ \text{ms}
 $$
 
-若当前时间为 430 ms，接下来要生成的是第 6 个 token，那么它还有 170 ms slack。即使它在本轮没有被调度，只要之后仍能在包络内追上，就不等于体验目标已经受损。
+若前 6 个 token 已经完成，调度器接下来要生成的是第 7 个 token，此时 $next\_output\_idx=6$，对应 deadline 为 600 ms。若当前时间为 430 ms，它还有 170 ms slack。即使它在本轮没有被调度，只要之后仍能在包络内追上，就不等于体验目标已经受损。
 
 这种定义把公平从“每一轮都分到相同资源”改成了“每个请求都沿着自己的延迟契约推进”。
 
@@ -328,7 +328,7 @@ FairBatching 的关键并不是提出又一种“prefill 占多少比例”的�
 
 ## 参考资料
 
-- [FairBatching: Fair and Efficient Batch Formation for LLM Inference](https://arxiv.org/html/2510.14392)
-- [Sarathi-Serve: Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve](https://arxiv.org/abs/2403.02310)
+- [FairBatching: Fairness-Aware Batch Formation for LLM Inference](https://arxiv.org/html/2510.14392)
+- [Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve](https://arxiv.org/abs/2403.02310)
 - [vLLM Optimization and Tuning: Chunked Prefill](https://docs.vllm.ai/en/latest/configuration/optimization/)
 - [vLLM V1 Scheduler source](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py)

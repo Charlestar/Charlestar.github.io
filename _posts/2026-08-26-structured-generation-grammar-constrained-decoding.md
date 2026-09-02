@@ -3,7 +3,7 @@ layout: post
 title: "结构化生成：Grammar 怎样约束每一个 Token"
 subtitle: "从 JSON Schema、Regex 与 CFG 到 Token Mask，理解 Constrained Decoding 的正确性与性能边界"
 date: 2026-08-26 09:00:00 +0800
-last_modified_at: 2026-08-31
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: model-serving-agents
@@ -649,7 +649,7 @@ Grammar-Constrained Decoding 把“希望模型遵守格式”变成“非法格
 
 - Willard & Louf, [Efficient Guided Generation for Large Language Models](https://arxiv.org/abs/2307.09702)
 - Dong et al., [XGrammar: Flexible and Efficient Structured Generation Engine for Large Language Models](https://arxiv.org/abs/2411.15100)
-- Dong et al., [XGrammar 2: Unified Grammar-Constrained Decoding](https://arxiv.org/abs/2601.04426)
+- Li et al. (2026), [XGrammar-2: Dynamic and Efficient Structured Generation Engine for Agentic LLMs](https://arxiv.org/abs/2601.04426)
 - [XGrammar 官方仓库与文档](https://github.com/mlc-ai/xgrammar)
 - [vLLM Structured Outputs 文档](https://docs.vllm.ai/en/latest/features/structured_outputs/)
 - [XGrammar GHSA-7rgv-gqhr-fxg3 安全公告](https://github.com/mlc-ai/xgrammar/security/advisories/GHSA-7rgv-gqhr-fxg3)

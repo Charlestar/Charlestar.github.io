@@ -3,7 +3,7 @@ layout: post
 title: "Attention–FFN 解耦：一层 Transformer 为什么要跨两类 GPU Pool"
 subtitle: "从 KV 状态、MoE Expert 权重到逐层 Activation 传输，理解 AF Disaggregation 的容量与通信边界"
 date: 2026-08-28 09:00:00 +0800
-last_modified_at: 2026-09-01
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: moe-communication
@@ -96,13 +96,19 @@ collocated 实例为了容纳更多长上下文，常常需要增加实例数。
 
 设 $r$ 个 Attention workers 各提供 microbatch $B$，一个 FFN worker 接收约 $rB$ 个 token。更大的 FFN batch 可以提高每个 expert 获得的 token 数，让 grouped GEMM 从反复读取权重的 memory-bound 区域向 compute-bound 区域移动。
 
-对于简化矩阵乘 $C=AB$，若忽略 activation 流量，单 expert 的算术强度随 token 数 $m$ 增长：
+对于简化矩阵乘 $C=AB$，设 $A\in\mathbb{R}^{m\times k}$、$B\in\mathbb{R}^{k\times n}$，并令每个 weight 元素占 $s$ bytes。若暂时只计占主导的 weight 读取，计算量约为 $2mkn$ FLOPs，搬运量约为 $kns$ bytes，因此：
 
 $$
-I\approx\frac{2mkn}{kn}=2m
+I_{weight}\approx\frac{2mkn}{kns}=\frac{2m}{s}
 $$
 
-这解释了 AFD 的直觉：不是 FFN 天生 compute-bound，而是聚合足够大的 $m$ 后才可能 compute-bound。
+它的单位是 FLOPs/byte；例如 FP16/BF16 的 $s=2$，这一近似给出 $I_{weight}\approx m$ FLOPs/byte。若把输入与输出 activation 也计入、假设三者使用相同字节宽度，并且每个矩阵元素只发生一次必要的 HBM 读写，则理想化上限是：
+
+$$
+I_{ideal}\approx\frac{2mkn}{s(mk+kn+mn)}
+$$
+
+实际 kernel 还会读取 scale、路由元数据并产生中间流量，所以应以 profiler 的实测 bytes 为准。这仍然解释了 AFD 的直觉：不是 FFN 天生 compute-bound，而是聚合足够大的 $m$、摊薄每批 weight 读取后才可能进入 compute-bound 区域。
 
 ### Attention 与 FFN 可以使用不同硬件和比例
 

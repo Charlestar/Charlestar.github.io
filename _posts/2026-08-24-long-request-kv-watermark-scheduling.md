@@ -3,7 +3,7 @@ layout: post
 title: "长请求治理：Chunked Prefill 之后，KV Cache 怎样避免被长输出占满"
 subtitle: "从输入公平调度、动态 KV 准入到高水位保护，理解长尾请求的完整生命周期"
 date: 2026-08-24 09:00:00 +0800
-last_modified_at: 2026-08-31
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -166,7 +166,7 @@ $$
 
 ## 7. Prefill 暂停后必须保留什么
 
-在 Chunk 边界暂停长 Prefill时，已经完成的前缀 KV 是继续执行的断点。恢复必须保持：
+在 Chunk 边界暂停长 Prefill 时，已经完成的前缀 KV 是继续执行的断点。恢复必须保持：
 
 ```text
 computed_tokens
@@ -403,7 +403,7 @@ Credit 可以按 KV Bytes、目标 D Class 和有效期发放。没有 Credit �
 
 ## 21. Cache-Aware 路由也要看长输出驻留
 
-Router 常把请求送到 Prefix 命中最多的 Worker。但一个拥有长 Prefix 的 Worker可能同时承载许多长输出，KV 已接近 Critical。
+Router 常把请求送到 Prefix 命中最多的 Worker。但一个拥有长 Prefix 的 Worker 可能同时承载许多长输出，KV 已接近 Critical。
 
 更完整的成本函数是：
 
@@ -553,8 +553,8 @@ Chunked Prefill、Quota 与 Aging 让长输入在 Chunk 边界公平让出；动
 
 - [快手万擎大模型推理成本和性能优化实践](https://zhuanlan.zhihu.com/p/2067652898524345525)
 - [SARATHI: Efficient LLM Inference by Piggybacking Decodes with Chunked Prefills](https://arxiv.org/abs/2308.16369)
-- [Sarathi-Serve: Taming Throughput-Latency Tradeoff in LLM Inference](https://www.usenix.org/conference/osdi24/presentation/agrawal)
-- [FairBatching: Fair and Efficient Batch Formation for LLM Inference](https://arxiv.org/html/2510.14392)
-- [PagedAttention: Efficient Memory Management for Large Language Model Serving](https://arxiv.org/abs/2309.06180)
+- [Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve](https://www.usenix.org/conference/osdi24/presentation/agrawal)
+- [FairBatching: Fairness-Aware Batch Formation for LLM Inference](https://arxiv.org/html/2510.14392)
+- [Efficient Memory Management for Large Language Model Serving with PagedAttention](https://arxiv.org/abs/2309.06180)
 - [vLLM Optimization and Tuning](https://docs.vllm.ai/en/latest/configuration/optimization/)
 - [TensorRT-LLM KV Cache System](https://nvidia.github.io/TensorRT-LLM/features/kvcache.html)

@@ -3,7 +3,7 @@ layout: post
 title: "DistServe：为什么 Prefill 与 Decode 要分开配置"
 subtitle: "从阶段干扰、每 GPU Goodput 到带宽感知 Placement"
 date: 2026-06-29 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-02
 author: iStar
 catalog: true
 series: distributed-inference
@@ -552,4 +552,4 @@ DistServe 把 Prefill/Decode 分离从一个架构技巧变成了可量化的资
 - [DistServe OSDI 2024 论文 PDF](https://www.usenix.org/system/files/osdi24-zhong-yinmin.pdf)
 - [DistServe 官方实现](https://github.com/LLMServe/DistServe)
 - [DistServe 预印本](https://arxiv.org/abs/2401.09670)
-- [Sarathi-Serve: Taming Throughput-Latency Tradeoff with Chunked Prefills](https://www.usenix.org/conference/osdi24/presentation/agrawal)
+- [Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve](https://www.usenix.org/conference/osdi24/presentation/agrawal)

@@ -1500,7 +1500,7 @@ $$
 - [NVIDIA Grace Blackwell with ConnectX-8 GPUDirect RDMA Guide](https://docs.nvidia.com/multi-node-nvlink-systems/grace-blackwell-cx8-gpudirect-rdma-guide/index.html)
 - [Linux Kernel：PCI Peer-to-Peer DMA Support](https://docs.kernel.org/driver-api/pci/p2pdma.html)
 - [Linux Kernel：ABI Testing Symbols](https://www.kernel.org/doc/html/latest/admin-guide/abi-testing.html)
-- [Linux Kernel：Stable NUMA sysfs ABI](https://www.kernel.org/doc/html/latest/admin-guide/abi-stable-files.html)
+- [Linux Kernel：NUMA Memory Performance](https://docs.kernel.org/admin-guide/mm/numaperf.html)
 - [PCI-SIG：PCI Express Base Specification Overview](https://pcisig.com/specification-overview/pci-express-base)
 - [InfiniBand Trade Association：Specification FAQ](https://infinibandta.org/ibta-specification/)
 - [InfiniBand Trade Association：RoCEv2 Announcement](https://www.infinibandta.org/ibta-announces-new-roce-specification/)
