@@ -3,7 +3,7 @@ layout: post
 title: "KV Cache：自回归推理为什么必须保存历史状态"
 subtitle: "从重复计算、每 Token 显存到 MHA/GQA/MQA 与缓存生命周期"
 date: 2026-06-26 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -141,38 +141,52 @@ Prefill 对每层执行：
 
 所以 prefill 同时产生两类结果：
 
-- 面向用户的第一个 token；
+- 用于采样第一个生成 token 的 logits；
 - 面向后续 decode 的完整层级状态。
 
 Prefill 计算量大、token 并行度高，通常偏计算密集；decode 每轮只增加一个 token，却反复扫描长 KV，通常偏显存带宽受限。KV Cache 没有让 attention 对历史的读取消失，它消除的是历史 K/V projection 和前面层输出的重复计算。
 
 ## 不使用 Cache 时，复杂度怎样增长
 
-假设 prompt 长度 $L$，需要生成 $T$ 个 token。若每轮把完整前缀重新送入模型，本轮序列长度为 $L+t$。
+假设 prompt 长度 $L$，需要生成 $T$ 个 token。把产生第一个生成 token 的 prompt forward 记为 $t=0$，此时输入长度为 $L$；产生后续 token 时，输入长度依次为 $L+1,\ldots,L+T-1$。
 
 仅从线性投影和 MLP 的 token 工作量看，总处理 token 数约为：
 
 $$
-\sum_{t=1}^{T}(L+t)
-=TL+\frac{T(T+1)}{2}
+\sum_{t=0}^{T-1}(L+t)
+=TL+\frac{T(T-1)}{2}
 $$
 
 有 cache 后：
 
 $$
-L+T
+L+T-1
 $$
 
-个 token 的 projection/MLP 只需各计算一次。
+个 token 的 projection/MLP 只需各计算一次：prompt 的 $L$ 个 token 在 prefill 计算，前 $T-1$ 个已生成 token 在后续 decode 中各计算一次；最后返回的 token 不必再送入模型才能完成这 $T$ 个 token 的生成。
 
-Dense attention 的历史读取仍随当前上下文长度增长，但从“每轮为所有 query rows 重算完整 causal matrix”变成“每轮只为新 query row 读取历史 K/V”。忽略常数：
+Dense attention 的历史读取仍随当前上下文长度增长，但从“每轮为所有 query rows 重算完整 causal matrix”变成“每轮只为新 query row 读取历史 K/V”。按常用的平方 attention 工作量计数（省略 causal 三角带来的常数因子），无缓存路径为：
+
+$$
+\sum_{t=0}^{T-1}(L+t)^2
+=TL^2+LT(T-1)+\frac{T(T-1)(2T-1)}{6}
+$$
+
+缓存路径包含一次 prompt prefill，以及后续 $T-1$ 个单 query row：
+
+$$
+L^2+\sum_{t=1}^{T-1}(L+t)
+=L^2+(T-1)L+\frac{T(T-1)}{2}
+$$
+
+因而更准确的端到端量级比较是：
 
 ```text
-recompute attention over generation:  O((L+T)^3) cumulative pair work
-cached incremental attention:         O((L+T)^2) cumulative pair work
+recompute:  O(TL² + LT² + T³)
+cached:     O(L² + TL + T²)
 ```
 
-这里用于表达量级变化，不包含不同 kernel、prefill 并行和 batch。KV Cache 让增量生成从不可接受的重复前缀计算，降为每 token 仍随上下文线性增长的 attention read。
+只有在 $L$ 与 $T$ 都随总序列长度同比增长时，前者才可简写成累计三次量级、后者连同 prefill 简写成二次量级；当 $T\ll L$ 时，保留 $L,T$ 的展开式更有解释力。这里不包含不同 kernel、prefill 并行和 batch。KV Cache 让增量生成从不可接受的重复前缀计算，降为每 token 仍随上下文线性增长的 attention read。
 
 ## 每个 Token 的 KV Cache 占多少显存
 
@@ -811,7 +825,7 @@ D: cancelled mid-step
 
 | 技术 | 主要减少 Prefill 计算 | 主要减少 KV 容量 | 主要减少 Decode 读取 | 引入的主要成本 |
 | --- | --- | --- | --- | --- |
-| 普通 KV Cache | 是，避免跨 step 重算 | 否，反而保存状态 | 相对重算大幅更合理，但仍读全历史 | 显存容量 |
+| 普通 KV Cache | 不减少首次 prefill；避免 decode 时重算历史前缀 | 否，反而保存状态 | 相对重算大幅更合理，但仍读全历史 | 显存容量 |
 | MQA/GQA | 间接 | 是 | 是 | 模型结构/质量折中 |
 | PagedAttention | 否 | 减少预留和碎片浪费 | 读取有效 blocks | block table 寻址 |
 | Prefix caching | 是 | 共享时减少重复物理块 | 通常仍读共享历史 | hash/refcount/eviction |

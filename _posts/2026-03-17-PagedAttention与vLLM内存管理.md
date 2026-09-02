@@ -3,7 +3,7 @@ layout: post
 title: "PagedAttention 与 vLLM KV Cache 管理"
 subtitle: "一条请求的分块、映射、共享与回收"
 date: 2026-03-17
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -107,7 +107,7 @@ PagedAttention kernel 需要按 block table 收集 K/V。与连续张量相比�
 
 ### 2. 查询已计算前缀
 
-若启用 automatic prefix caching，KV Cache manager 会按完整 token block 计算哈希，查找是否已有相同前缀。命中部分无需重新 prefill。
+若启用 automatic prefix caching，KV Cache manager 会为 token 前缀计算链式 block hash，查找是否已有相同前缀。经典的同构 attention 配置以完整物理 block 为匹配边界；当前 vLLM 的混合 KV Cache 布局还可通过 `prefix_match_unit` 使用比物理 block 更细的哈希粒度。命中部分无需重新 prefill。
 
 ### 3. 预留写入槽位
 
@@ -119,7 +119,7 @@ worker 对本轮 token 做 forward，将新 K/V 写入分配好的 slot。PagedA
 
 ### 5. 更新状态
 
-执行完成后，系统更新已计算 token 数、采样结果和 block 状态。部分块填满后可以进入前缀缓存索引；未填满的尾块继续属于当前请求。
+执行完成后，系统更新已计算 token 数、采样结果和 block 状态。经典完整块缓存会在 block 填满后将其纳入前缀缓存索引，未填满的尾块继续属于当前请求；混合模型的细粒度匹配还要遵循各 KV Cache group 的状态保存与对齐规则。
 
 ### 6. 继续、抢占或结束
 
@@ -172,14 +172,16 @@ $$
 
 父 block 哈希把此前完整前缀纳入身份，`tokens_i` 是当前 block 的 token，`extra` 则应包含会影响 K/V 的其他信息，如 LoRA adapter、多模态输入哈希或缓存隔离 salt。
 
-只有完整 block 容易安全命中。设 block size 为 4：
+经典同构 attention 的实现通常只在完整物理 block 边界命中。设 block size 为 4：
 
 ```text
 Request A: [A B C D] [E F G H] [I J _ _]
 Request B: [A B C D] [E F G X] [...]
 ```
 
-两者只能共享第一块。第二块最后一个 token 不同，从这里开始后续 K/V 都处在不同上下文中；A 的不完整尾块也不作为完整前缀共享。
+两者只能共享第一块。第二块最后一个 token 不同，从这里开始后续 K/V 都处在不同上下文中；在这种完整块方案里，A 的不完整尾块也不作为完整前缀共享。
+
+这里要区分**匹配粒度**与**物理存储粒度**。截至本文修订时，vLLM 的 `prefix_match_unit` 可以小于混合 KV Cache group 的物理 block size，只要各组 block size 都能被它整除；这样 hash 能落在物理块内部的更细 token 边界，但并不表示系统在每个边界都另存一份状态。普通、单一 attention KV Cache group 的默认哈希粒度仍与其调度 block size 相同。
 
 共享块带有引用计数。多个请求引用时，物理块不能被释放或覆盖；引用归零后，它可以暂时留在缓存索引中等待未来命中，也可以在需要空间时被淘汰。
 
@@ -258,4 +260,5 @@ PagedAttention 的核心价值，是把“序列连续”与“显存连续”�
 - [Efficient Memory Management for Large Language Model Serving with PagedAttention](https://arxiv.org/abs/2309.06180)
 - [vLLM 官方文档](https://docs.vllm.ai/)
 - [vLLM Automatic Prefix Caching 设计](https://docs.vllm.ai/en/latest/design/prefix_caching/)
+- [vLLM CacheConfig：prefix_match_unit](https://docs.vllm.ai/en/latest/api/vllm/config/cache/)
 - [vLLM 官方仓库](https://github.com/vllm-project/vllm)

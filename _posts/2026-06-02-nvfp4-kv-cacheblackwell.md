@@ -3,12 +3,12 @@ layout: post
 title: "NVFP4 KV Cache：Blackwell 上的 4-bit 缓存量化"
 subtitle: "从 E2M1 与双层缩放到容量、内核和精度验证"
 date: 2026-06-02 12:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-03
 author: iStar
 catalog: true
 series: kv-cache-memory
 series_order: 60
-technology_year: 2026
+technology_year: 2025
 mathjax: true
 tags: [模型量化, KV Cache, LLM推理]
 ---
@@ -239,7 +239,7 @@ RoPE 也要纳入理解。实现通常缓存已经应用位置变换的 K；位�
 
 NVFP4 是为 NVIDIA Blackwell 引入的格式，但 Blackwell 包含不同 compute capability，kernel 支持也分 attention backend、head dimension、模型架构和精度组合。
 
-截至 2026-08-09：
+截至 2026-09-03：
 
 - TensorRT-LLM 当前硬件矩阵把 NVFP4 KV Cache 标为支持 Blackwell SM100/SM103，未把 SM120 标为支持；
 - vLLM 当前源码已包含 `nvfp4` KV cache dtype 和专门的 page-size 路径；
