@@ -3,7 +3,7 @@ layout: post
 title: "AWQ：为什么 4-bit 权重量化要先观察 Activation"
 subtitle: "从显著通道、等价缩放到 W4A16 Kernel 与端到端 Serving 收益"
 date: 2026-08-03 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -27,7 +27,7 @@ $$
 Y=XW
 $$
 
-权重 $W$ 以 group 为单位量化。对一组实数权重 $w$，对称 $b$-bit 量化可以写成：
+权重 $W$ 以 group 为单位量化。对一组有限实数权重 $w$，用整数位宽 $b\ge2$ 的简化对称量化可以写成：
 
 $$
 q_{max}=2^{b-1}-1
@@ -42,6 +42,8 @@ q=\operatorname{clip}
 \left(\operatorname{round}\left(\frac{w}{s}\right),
 -q_{max},q_{max}\right)
 $$
+
+上面的 min-max scale 要求 $\max|w|>0$；全零组可设正 scale 为 1、codes 全为零，避免除零。这里只是对称量化示意，不是 AWQ artifact 的唯一格式：官方实现也支持带 zero point 的非对称方案，编码范围与 packing 需单独记录。
 
 推理时近似恢复：
 
@@ -186,7 +188,7 @@ q=\operatorname{round}
 \left(\frac{\operatorname{clip}(w,-m',m')}{s'}\right)
 $$
 
-会牺牲被裁剪 outliers，却给主体权重更细的 resolution。AWQ 搜索阶段结合 activation-aware objective 选择 scale/clipping，而不是只优化 weight MSE。
+其中沿用对称示意，$0<m'<m$、$s'=m'/q_{max}$。它会牺牲被裁剪 outliers，却给主体权重更细的 resolution。AWQ 搜索阶段结合 activation-aware objective 选择 scale/clipping，而不是只优化 weight MSE。
 
 Clipping 结果是每层/每组量化 artifact 的一部分，不能在 serving load 时随意重算成另一套 min-max 范围。
 

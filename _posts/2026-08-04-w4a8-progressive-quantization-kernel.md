@@ -3,7 +3,7 @@ layout: post
 title: "W4A8：4-bit Weight 怎样喂给 8-bit Tensor Core"
 subtitle: "从 Progressive Quantization、寄存器解包到 QServe 的系统协同设计"
 date: 2026-08-04 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -164,6 +164,15 @@ S^{(1)}
 \left(Q^{(1)}_{u4}-Z^{(1)}\right)
 $$
 
+这些 $S$ 是按对应轴广播的逐元素 scale，不是可任意左乘权重的普通矩阵。沿本文 $W\in\mathbb R^{K\times N}$ 约定，可明确写成：
+
+$$
+\hat W_{kn}=s^{(0)}_n\,s^{(1)}_{g(k),n}
+\left(q^{(1)}_{kn}-z^{(1)}_{g(k),n}\right)
+$$
+
+其中 $g(k)$ 是 input/reduction 维上的 group，$s^{(0)}$ 沿 output channel 定义；$s^{(1)}$ 与 zero point 按 K-group/output channel 定义。第二级重建是近似值，不保证逐元素恢复第一次量化的原 INT8 codes。[QServe §4.1、式 (4)–(5)](https://arxiv.org/html/2405.04532v3)
+
 这里两级 scale 的职责不同：
 
 - $S^{(0)}$ 把最终 INT8 dot-product 对应回浮点 weight 范围，适合延后到 epilogue；
@@ -182,7 +191,7 @@ $$
 
 两级量化有一个容易忽视的边界：UINT4 值经 scale 与 zero point 恢复后，必须仍落在 signed INT8 范围。
 
-例如，某组 INT8 中间 weight 的范围近似为 $[-113,120]$。将它非对称压到 $[0,15]$ 后，整数化的 group scale 可能为 16；最大 UINT4 code 反量化后可能得到 128，已经超过 INT8 最大值 127。
+例如，某组 INT8 中间 weight 的范围近似为 $[-113,120]$。将它非对称压到 $[0,15]$ 后，整数化的 group scale 为 16、zero point 为 7。按先舍入再加整数 zero point 的约定，$q=\operatorname{round}(120/16)+7=15$，反量化得到 $(15-7)\times16=128$，已经超过 INT8 最大值 127。这里 round 在 7.5 处取 8；若改变 tie-breaking 或把 zero point 移入 round，边界结果可能不同，因此 exporter 与 kernel 的运算顺序也属于数值契约。
 
 可以在运行时 saturation，但 saturation 指令和误差都不是免费的。QServe 选择在第一级量化时把对称 INT8 范围从常见的 $[-127,127]$ 收紧到保护范围 $[-119,119]$，以约束第二级恢复后的溢出风险。
 

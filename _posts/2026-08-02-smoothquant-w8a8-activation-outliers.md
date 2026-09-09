@@ -246,12 +246,13 @@ BF16 activation
   → BF16 output or requantized INT8 output
 ```
 
-若 activation 和 weight 分别有 scale $s_x$ 与 $s_w$，整数点积可以写成：
+若 $X\in\mathbb R^{M\times K}$、$W\in\mathbb R^{K\times N}$，activation 按 token row 使用 scale $s_{x,m}$，weight 按 output channel 使用 $s_{w,n}$，对称整数点积可以写成：
 
 $$
-Y\approx(s_x q_x)(s_w q_w)
-=s_xs_w\sum_k q_{x,k}q_{w,k}
+Y_{mn}\approx s_{x,m}s_{w,n}\sum_{k=1}^{K}(q_x)_{mk}(q_w)_{kn}
 $$
+
+两侧各用一个标量的 per-tensor scale 是它的特例。scale 必须在这次 $K$ 维求和内保持不变才能移到 epilogue；若按 input channel 或 K-group 变化，就要对局部部分和分别处理，不能直接套用上式。这里也未包含非对称 zero-point 修正。[SmoothQuant §3.1、式 (2)](https://arxiv.org/html/2211.10438v1)
 
 整数乘加通常需要更宽的 accumulator，随后再应用 scale 并转换到输出 dtype；准确的 accumulator、rounding 和 saturation 规则由 kernel contract 决定。
 

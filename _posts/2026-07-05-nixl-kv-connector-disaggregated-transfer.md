@@ -219,7 +219,7 @@ P: source KV [READY, PINNED]
 D: target KV [ALLOCATED] → [LOADING] → [READY]
 ```
 
-优势是 D 知道自己何时有空间，可以控制读入节奏。P 必须一直保留源 block，直到 D 明确完成或 lease 超时。
+优势是 D 知道自己何时有空间，可以控制读入节奏。P 必须一直保留源 block，直到相关读取完成；lease 超时只能触发撤销与清理流程，不能直接证明远端已经停止访问。
 
 ### P 端 Push
 
@@ -315,7 +315,7 @@ cross-layer contiguous arena
 per-layer independent tensors
 ```
 
-再乘上 tensor parallel 后，每个 rank 只持有部分 KV heads；pipeline parallel 只持有部分 layers；某些 attention backend 还会使用特定 packing、alignment 或 quantized scale。
+若 tensor parallel 按 KV heads 分片，每个 rank 持有部分 KV heads；MQA、MLA 或 KV heads 少于 TP degree 时也可能复制缓存或采用其他布局。Pipeline parallel 通常只持有本 stage 的 layers；某些 attention backend 还会使用特定 packing、alignment 或 quantized scale。
 
 如果 P 和 D 的布局不同，直接逐字节复制可能“传输成功、推理错误”。Connector 必须：
 
@@ -372,19 +372,21 @@ FREE
 
 Pull 模式中，P 为 D pin 住 KV。若 D 崩溃、请求取消或 control message 丢失，P 可能永远等不到 release，最终耗尽 KV pool。
 
-租约为 pin 状态设置有界生命周期：
+上层可以用租约为 pin 状态设置超时和故障检测边界。下面是设计模式，不代表每个版本的 NixlConnector 都实现了逐请求 heartbeat/renew 协议：
 
 ```text
 grant lease(TTL)
       │
       ├─ D heartbeat/renew ─► extend expiry
       ├─ transfer complete ─► explicit release
-      └─ no renewal until expiry ─► reclaim
+      └─ no renewal until expiry ─► revoke / drain / verify ─► reclaim
 ```
 
 TTL 太短，慢传输或排队中的正常请求会被提前回收；TTL 太长，故障 worker 会长期占住 HBM。更可靠的设计用 heartbeat 续租，并把 request cancel、worker failure 与 transfer completion 接入同一释放路径。
 
-租约只能保护生命周期，不能替代 generation/version。block 地址重新分配后，即便旧 completion 迟到，也不能释放新 owner 的 block；回执应携带 request/transfer epoch 或唯一 ownership token。
+过期后先阻止新的传输、失效描述符，再按 backend 契约等待或中止在途访问；只有确认 NIC/GPU 不再读取或写入，才能复用内存。无法证明时应隔离该 buffer，不能只因 TTL 到期就重新分配。特别是整个 KV arena 共用内存注册时，删除一个请求的目录项并没有撤销已持有地址和访问权限的远端 DMA。
+
+generation/version 仍然必要：旧 completion 不能释放新 owner 的 block，回执应携带 request/transfer epoch 或唯一 ownership token。但 epoch 检查只能拒绝旧消息，不能拦截已经发出的 DMA。[GPUDirect RDMA §3.3](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#unpin-callback)要求在撤销映射时处理 outstanding DMA，正是这一生命周期边界的底层依据。
 
 ## 动态扩缩容首先是 Metadata Cache 问题
 

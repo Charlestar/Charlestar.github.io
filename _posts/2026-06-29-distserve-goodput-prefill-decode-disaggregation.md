@@ -257,7 +257,7 @@ DistServe 不预设 P 一定 TP、D 一定复制，而是让 workload 与 SLO �
 
 ## KV Cache 交接怎样进入成本模型
 
-对 prompt 长度 $S$，KV payload 近似：
+对 prompt 长度 $S$、层数 $L$、每层 KV head 数 $H_{kv}$、head dimension $D$ 和每元素 $B$ 字节，标准 MHA/GQA 的 KV payload 近似：
 
 $$
 M_{KV}=2SLH_{kv}DB
@@ -270,7 +270,15 @@ BW_{required}\approx
 \lambda E[M_{KV}]
 $$
 
-论文用 OPT-66B、512-token 请求举例，单请求 KV 约 1.13 GB；10 req/s 已需要约 11.3 GB/s，也就是约 90 Gbps 的有效数据率。现代 GQA/MQA 模型会显著减小 KV，但长上下文和更高 RPS 仍可能把传输推成瓶颈。
+论文用 OPT-66B、512-token 请求说明传输压力。这里把单位展开复算：[官方模型配置](https://huggingface.co/facebook/opt-66b/blob/main/config.json)为 64 层、72 个 attention heads、hidden size 9216，即 head dimension 128；MHA、FP16 KV 的主体为：
+
+$$
+2\times512\times64\times72\times128\times2
+=1{,}207{,}959{,}552\ \text{bytes}
+=1.125\ \text{GiB}\approx1.208\ \text{GB}
+$$
+
+10 req/s 对应约 12.08 GB/s，即 96.64 Gbit/s 的有效 payload 数据率，尚未计协议、对齐和重传。论文正文的约 1.13 GB 使用了接近 GiB 的数值；不能再把它作为十进制 GB 去换算链路 bit/s。现代 GQA/MQA 模型会显著减小 KV，但长上下文和更高 RPS 仍可能把传输推成瓶颈。
 
 需要区别：
 

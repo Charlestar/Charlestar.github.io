@@ -96,7 +96,7 @@ $$
 s=\frac{a_{max}}{F_{max}}
 $$
 
-这让最大值刚好落在格式边界。实际 recipe 还可能加入 margin、power-of-two rounding、历史统计、clipping 和 distributed amax reduction。
+这个式子要求输入有限且 $a_{max}>0$，让最大值刚好落在格式边界。全零 tensor/block 应显式返回零 codes 并使用合法正 scale（例如 1），不能令 $s=0$ 后再计算 $X/s$；NaN/Inf 则需按 recipe 报错或处理。实际 recipe 还可能加入 margin、power-of-two rounding、历史统计、clipping 和 distributed amax reduction。本文的 $s$ 是反量化乘子，有些库把其倒数称为 `scale`，接入时必须核对方向。
 
 scale 太小会让大值溢出/饱和；太大则可能让小值进入 subnormal（非正规数）范围，丢失有效精度，甚至舍入为零。只要数值仍处于正常数范围，就不能仅凭缩放后的数值变小，断言它的相对精度变差。
 
@@ -207,7 +207,7 @@ $$
 Y=XW
 $$
 
-使用 FP8 输入时：
+先限定为每个 operand 使用一个标量 scale；使用 FP8 输入时：
 
 $$
 X\approx s_xX_8,
@@ -220,6 +220,8 @@ $$
 $$
 Y\approx s_xs_w(X_8W_8)
 $$
+
+若 $X$ 为 $M\times K$、$W$ 为 $K\times N$，per-row activation 与 per-output-channel weight scale 也可在点积外应用：$Y_{mn}\approx s_{x,m}s_{w,n}\sum_k(X_8)_{mk}(W_8)_{kn}$。但 scale 若沿 reduction 维 $K$ 分块变化，就必须对相应分组的部分和分别缩放，不能从整个点积中提取一个 $s_xs_w$；MXFP8/block-scaled GEMM 的 kernel 契约正包含这层含义。
 
 需要明确：
 
@@ -278,7 +280,7 @@ Transformer Engine 的 autocast 只让被认定为 FP8-safe 的模块进入低�
 KV Cache 保存每层历史 keys/values，被未来每个 Decode step 反复读取。FP8 KV 可以近似减半 BF16 KV 容量和带宽，但与 FP8 linear weights 不同：
 
 - KV 是请求动态产生的；
-- scale 必须在线生成或按预定义粒度计算；
+- scale 可以在线生成，也可以由离线 calibration 固定；必须与 KV 量化、存储和读取时的粒度/版本一致；
 - 同一 block 被多次使用；
 - 长上下文误差可能持续影响 Attention；
 - block/paged layout 决定 scale metadata 放置。
@@ -478,7 +480,7 @@ FP8 的核心不是一个 8-bit dtype，而是“编码格式 + scale granularit
 可以记住八点：
 
 1. E4M3 用更多 mantissa 换精度，E5M2 用更多 exponent 换范围；
-2. 外部 scale 仍必不可少，负责把 tensor 分布映射进 FP8；
+2. scale 约定负责把 tensor 分布映射进 FP8；它可以隐式为 1，但不能忽略其数值与方向；
 3. Current、delayed、per-tensor、per-channel、block scaling 有不同成本；
 4. Weight FP8、W8A8 GEMM、FP8 KV 与 FP8 communication 是四条独立路径；
 5. GEMM 输入、accumulator、output 和 epilogue 精度都要明确；

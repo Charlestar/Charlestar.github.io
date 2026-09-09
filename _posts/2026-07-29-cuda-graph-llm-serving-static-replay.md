@@ -3,7 +3,7 @@ layout: post
 title: "CUDA Graph：把动态 LLM Serving 装进可重放的静态执行图"
 subtitle: "从 Kernel Launch 开销到 Batch Bucket、静态地址与 Piecewise Capture"
 date: 2026-07-29 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -107,7 +107,7 @@ cudaGraphInstantiate(&graph_exec, graph, ...);
 
 ## 三个核心静态约束
 
-PyTorch 官方 CUDA semantics 将 Graph 的主要限制归纳为静态 shape、静态 control flow 和稳定 memory addresses。三者在 serving 中含义不同。
+以下讨论 PyTorch 常见的“capture 后直接 replay、没有显式更新节点”路径，它要求静态 shape、静态 host control flow 和稳定 memory addresses。CUDA 底层还提供受约束的节点参数更新、graph update 与 conditional nodes，不能把这些限制理解成 CUDA Graph API 永远不支持任何动态行为。[CUDA Graphs §4.2.3、§4.2.4](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html)
 
 ### Shape 静态
 
@@ -194,11 +194,13 @@ rows 19..23: padding / masked slots
 
 ### Padding 的浪费
 
-理想情况下，额外工作比例为：
+若每 row 成本相同，padding 占本轮执行 rows 的比例为：
 
 $$
 W_{pad}=\frac{C-B}{C}
 $$
+
+相对有效工作额外增加的比例则是 $(C-B)/B$，二者分母不同。例如 $B=19,C=24$ 时，padding 占执行量约 20.8%，但相对 19 个有效 rows 多做约 26.3%；这里要求 $B>0$，空 batch 不需要 replay。
 
 但不同 kernels 对无效 rows 的处理不同：
 
@@ -416,14 +418,15 @@ Serving runtime 中常有 H2D metadata copy stream、compute stream、communicat
 
 Graph 要维持捕获时使用的稳定地址。PyTorch caching allocator 为 Graph 建立专用/private memory pool，避免 eager 分配复用这些地址。多个 graphs 若不共享合适的 pool，可能各自保留中间 buffers。
 
-总额外显存可以粗略写为：
+显存应按互不重叠的真实 allocation/pool 统计。例如按不同 private pool 的保留大小，加上池外静态 buffers 和其他图资源：
 
 $$
 M_{graphs}
-\approx \sum_{c\in\mathcal C}
-\left(M_{staticIO,c}+M_{workspace,c}+M_{privatePool,c}\right)
--M_{safeReuse}
+=\sum_{p\in\mathcal P_{unique}}M_{reserved,p}
++M_{static,outside}+M_{other,graph}
 $$
+
+private pool 已经包含从其中分配的中间 activation/workspace，不能再把同一 workspace 相加。多图共享一个 pool 也只计一次，但共享必须满足框架规定的 replay 顺序与非并发条件；不能靠任意减去一个“复用量”推断安全。[PyTorch：Graph memory management / Sharing memory across captures](https://docs.pytorch.org/docs/2.14/notes/cuda.html#graph-memory-management)
 
 捕获更多 sizes、full 与 piecewise 同时启用、模型路径更多，显存和启动时间都会增加。它会直接挤压 KV Cache：
 
@@ -455,21 +458,24 @@ Graph 只负责重放 GPU 操作，不自动提供请求级随机语义。
 下面的代码只展示稳定地址与 copy/replay 关系：
 
 ```python
-static_x = torch.empty((32, hidden), device="cuda")
+model.eval()
+# This example assumes model maps [32, hidden] to the same shape.
+static_x = torch.zeros((32, hidden), device="cuda")
 static_out = torch.empty_like(static_x)
 
 # Warm up on a side stream before capture.
 side = torch.cuda.Stream()
 side.wait_stream(torch.cuda.current_stream())
-with torch.cuda.stream(side):
+with torch.inference_mode(), torch.cuda.stream(side):
     for _ in range(3):
         static_out.copy_(model(static_x))
 torch.cuda.current_stream().wait_stream(side)
 
 graph = torch.cuda.CUDAGraph()
-with torch.cuda.graph(graph):
+with torch.inference_mode(), torch.cuda.graph(graph):
     static_out.copy_(model(static_x))
 
+@torch.inference_mode()
 def replay(x):
     # x's address may change; static_x's address does not.
     static_x.copy_(x)
@@ -571,7 +577,7 @@ Graph 最直接的证据是在 GPU timeline 中 kernel 间 host-induced gaps 减
 
 一张 graph 绑定多项运行状态。以下变化通常要求失效/重新 capture：
 
-- model weights 或其地址变化；
+- weight 地址、shape 或影响 kernel 选择的配置变化；同地址原地更新数值并非必然要 recapture，但必须先完成同步并验证模型/缓存语义；
 - quantization/kernel backend 切换；
 - process group/communicator 重建；
 - parallel layout 改变；

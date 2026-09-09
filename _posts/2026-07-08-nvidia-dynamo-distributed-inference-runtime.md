@@ -176,7 +176,7 @@ Worker 在 KV block 写入或移除时发布 `stored` / `removed` 事件；Route
 
 ```text
 worker A: block stored(hash h1, h2, h3)
-worker B: block evicted(hash h1, h2)
+worker B: block removed(hash h1, h2)
                   │
                   ▼
             global KV index
@@ -290,25 +290,25 @@ KVBM 关心：
 
 ## 多层 KV 的价值与代价
 
-假设从某层加载 $S$ 个 token 的 KV 耗时：
+设请求有可复用前缀 $H$ 和未计算后缀 $U$，从某层加载前缀的 KV 耗时：
 
 $$
-T_{load}(tier,S)
+T_{load}(tier,H)
 $$
 
-重新 prefill 耗时：
+令 $f(H,U)$ 表示固定模型、硬件、批次下的增量 prefill 时间；即使前缀已缓存，后缀 query 仍需访问它。完全重算与复用后的计算成本分别是：
 
 $$
-T_{prefill}(S)
+f(0,H+U),\qquad f(H,U)
 $$
 
 只有：
 
 $$
-T_{lookup}+T_{load}+T_{onboard}<T_{prefill}
+T_{lookup}+T_{load}+T_{onboard}+f(H,U)<f(0,H+U)
 $$
 
-复用才降低 TTFT。命中 SSD/remote storage 不一定比短 prompt 重算快。
+复用才在这个简化模型下降低 TTFT。这里假定两条路径的公共排队和后续工作相同、load 与 onboard 不重复计同一段搬运；若 worker 不同或存在重叠，要比较包含各自排队的实测关键路径。命中 SSD/remote storage 不一定比短 prompt 重算快，也不能把孤立计算前 $H$ 个 token 的时间直接当作必然节省量。
 
 多层 cache 还要决定：
 

@@ -3,7 +3,7 @@ layout: post
 title: "MoE 负载均衡：从 Router 偏置到 Expert 副本与 EPLB"
 subtitle: "分清训练时均衡、推理时重排，以及不改变 Top-k 语义的热点分流"
 date: 2026-07-20 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: moe-communication
@@ -74,7 +74,7 @@ DeepSeek 开源 EPLB 的输出正是这两类映射，以及每个逻辑 expert 
 
 ### Expert load
 
-设一层本轮共有 $N_a$ 个 assignments，逻辑 expert $e$ 收到 $n_e$：
+设一层本轮共有 $N_a>0$ 个有效 assignments，逻辑 expert $e$ 收到 $n_e$；空 batch 的 max-to-mean 不定义，不记作零负载不均衡：
 
 $$
 \bar n_e=\frac{N_a}{E}
@@ -263,7 +263,7 @@ e3 replicas=1 → 20
 最简单的静态均匀分流可以使用 round-robin 或 hash：
 
 ```text
-replicas = logical_to_physical[e]
+replicas = logical_to_physical[e][:logical_count[e]]
 p = replicas[hash(request_id, token_position, layer_id) % len(replicas)]
 ```
 
@@ -509,7 +509,7 @@ logical = physical_to_logical[p]
 assert p in logical_to_physical[logical]
 ```
 
-每个 logical expert 至少有一个 ready replica。
+每个 logical expert 至少有一个 ready replica。官方 `logical_to_physical` 是矩形 tensor，不同 expert 的有效副本数不同，未用位置填 `-1`；示意中的副本列表必须先按 `logical_count` 截取或过滤负值，不能把 padding 当作合法 slot 参与 hash/mod 分流。[EPLB `rebalance_experts` 返回值构造](https://github.com/deepseek-ai/EPLB/blob/main/eplb.py)
 
 ### Assignment 守恒
 

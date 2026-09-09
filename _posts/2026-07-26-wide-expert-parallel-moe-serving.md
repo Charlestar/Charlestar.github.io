@@ -3,7 +3,7 @@ layout: post
 title: "Wide EP：当 MoE Expert Parallel 横跨几十张 GPU"
 subtitle: "从 Attention DP、跨节点 All-to-All 到 P/D 两套并行布局"
 date: 2026-07-26 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: moe-communication
@@ -30,7 +30,7 @@ $$
 E_{local}=\frac{E+R}{P_e}
 $$
 
-个物理 experts。扩大 $P_e$ 可以让每张 GPU 只保存少量 expert 权重，为 KV Cache、通信 buffer 和更大 batch 留出空间。
+个物理 experts，前提是 $E+R$ 能被 $P_e$ 整除；否则需要显式的 uneven placement 或调整副本数/EP width。扩大 $P_e$ 可以让每张 GPU 只保存少量 expert 权重，为 KV Cache、通信 buffer 和更大 batch 留出空间。
 
 但 Wide EP 的价值不只在容量。每个 logical expert 可以从整个 EP group 聚合 token。假设每 rank 进入一层的 token 数为 $N_r$，Top-$k$ 为 $k$，全局 assignments 为：
 
@@ -236,7 +236,7 @@ $$
 N_{active}\gtrsim\frac{16\times256}{8}=512
 $$
 
-这只是均匀路由下的平均值；实际还要处理 expert/rank 倾斜。若在线并发长期低于这个量级，EP144 之类宽度可能无法形成理想 GEMM，应该缩小实例或合并流量，而不是维持空转的大 group。
+这只是均匀路由下**逻辑 expert** 的平均值；有 $c_e$ 个均匀分流副本时，每份物理 expert GEMM 的预期 rows 还要除以 $c_e$，512 条并发并不保证所有副本都有 16 rows。实际还要处理 expert/rank 倾斜。若在线并发长期不足，EP144 之类宽度可能无法形成理想 GEMM，应评估缩小实例或合并流量，而不是只依据逻辑平均数扩大 group。
 
 ## Wide EP 的通信矩阵怎样扩张
 

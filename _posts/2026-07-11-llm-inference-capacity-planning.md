@@ -40,7 +40,7 @@ $$
 TTFT=t_{first\ token}-t_{arrival}
 $$
 
-包括 gateway、排队、prefix lookup/load、prefill、P→D handoff 和首 token 返回。它不是纯 GPU prefill kernel 时间。
+包括首 token 到达客户端之前的 gateway、排队、prefix lookup/load、prefill 和返回路径。P→D handoff 只有位于首 token 返回之前时才计入 TTFT；若 P 已先发首 token，后续 handoff stall 应计入首个 ITL。它不是纯 GPU prefill kernel 时间。
 
 ### ITL 与 TPOT
 
@@ -50,13 +50,13 @@ $$
 ITL_j=t_{j+1}-t_j
 $$
 
-请求级 TPOT 常写为：
+对实际输出 $N>1$ 个 token 的请求，请求级 TPOT 常写为：
 
 $$
 TPOT=\frac{t_N-t_1}{N-1}
 $$
 
-平均 TPOT 会掩盖单个严重 stall，交互式服务还要观察 ITL tail。
+单 token 输出没有相邻 token 间隔，TPOT 未定义，应从该指标样本中排除而非当作零。平均 TPOT 会掩盖单个严重 stall，交互式服务还要观察 ITL tail。
 
 ### Goodput
 
@@ -164,7 +164,7 @@ $$
 
 - runtime：CUDA context、通信库与 allocator；
 - graph：不同 batch/shape 的 CUDA Graph pool；
-- workspace：attention、MoE、sampling 等临时 buffer；
+- workspace：尚未计入 graph pool 的 attention、MoE、sampling 等临时 buffer；
 - safety：碎片、版本变化和瞬时峰值余量。
 
 必须以目标 engine 启动日志和实测峰值校准，不能把所有 free HBM 都承诺给 KV。
@@ -208,7 +208,9 @@ T_{active}=\sum_{r\in R_{active}}
 (ISL_r+generated_r)
 $$
 
-Decode KV 利用率大致随 $T_{active}$ 增长，而不是只随 request count。10 条 100k 上下文与 100 条 1k 上下文，active requests 数更少，KV 压力反而更大。
+这是逻辑上下文长度指标，不是精确的已写入 KV 数。普通自回归在刚采样出 $g\ge1$ 个输出、尚未把最后一个输出送回模型时，已物化 KV 长度是 $ISL+g-1$；首 token 来自 prompt forward。实际占用还要按 `num_computed_tokens`、预留/推测位置、block 对齐与共享物理块去重计数，不能直接把上式乘 bytes/token 当作 allocator 账本。
+
+Decode KV 利用率大致随这些上下文长度增长，而不是只随 request count。10 条 100k 上下文与 100 条 1k 上下文，active requests 数更少，KV 压力反而更大。
 
 ## 从 KV Budget 推最大并发只是上界
 
@@ -266,15 +268,17 @@ Prefix hit 也不等于零成本：external cache 要 lookup、transfer、onboar
 每秒需要生成的 token 数为：
 
 $$
-D_D=\lambda\cdot E[OSL]
+D_{output}=\lambda\cdot E[OSL]
 $$
 
-它是 decode work 的起点，却不包含 active duration 和 batch shape。由 Little's Law，在稳定系统中平均并发近似：
+这是输出 token/s，不等于 decode forward 所处理的 token/s：普通生成的首 token 来自 prefill，后续 decode 需求为 $\lambda E[\max(OSL-1,0)]$；推测解码还要区分验证位置与提交 token。由 Little's Law，在稳定系统中平均 decode 并发为：
 
 $$
 N_{active}\approx
-\lambda\cdot E[T_{decode\ residence}]
+\lambda_D\cdot E[T_{decode\ residence}]
 $$
+
+$\lambda_D$ 必须是进入所统计 decode 状态边界的速率，residence 也从同一入边界算到离开；单 token 请求若不进入该状态就不计入，拒绝和重试尝试也需单独统计。若把等待 D 接管的队列算进 active，就必须同时扩展 residence，不能混用网关 offered RPS 与 GPU 内停留时间。
 
 若平均输出 1000 token、平均 ITL 30 ms，仅生成时间约 30 秒；即使 RPS 不高，也会累积大量 active sequences 与 KV。
 
@@ -430,8 +434,10 @@ Profile 数字必须来自目标模型与硬件，不能把这个例子代入生
 每请求 P→D payload 近似：
 
 $$
-M_{handoff}=2L H_{kv}D B_{kv}\cdot ISL_{effective}
+M_{handoff}=2L H_{kv}D B_{kv}\cdot S_{transferred}
 $$
+
+$S_{transferred}$ 是 D 为获得完整上下文而实际需要跨链路取得的 token 位置数，不是 P 的未命中 prompt token 数。P 命中本地前缀不会自动让 D 拥有它；D 没有可复用 KV 时通常仍需完整 ISL 的缓存。不同来源、副本/分片、压缩或 hybrid KV groups 应逐段按真实布局算 bytes，不能机械使用这个标准 MHA/GQA 公式。
 
 平均 payload rate：
 

@@ -3,7 +3,7 @@ layout: post
 title: "Mooncake：让 KV Cache 跨 Prefill 与 Decode 流动"
 subtitle: "从分离式推理、分布式缓存池到缓存感知调度与高速传输"
 date: 2026-07-02 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -175,6 +175,8 @@ T_{TTFT}
 +T_{uncached\ prefill}+T_{handoff}
 $$
 
+这只是关键路径的分项模型：各项应计未被重叠隐藏的等待，不能把并发执行的完整时长再次相加。若首 token 在 handoff 前已由 P 端发送，后续 handoff 影响的是首个 token 间隔，而非已经结束的 TTFT。
+
 ### 2. 只计算未命中的输入
 
 Prefill worker 跳过已复用前缀，对剩余 token 做 incremental prefill。长输入可以切成 chunk；更长或单节点难以满足 TTFT 的请求，还可以使用多节点 prefill 组织方式。
@@ -273,16 +275,16 @@ global request placement     Conductor / serving scheduler
 低层缓存容量更大，但延迟和带宽更差。命中远端 SSD 的前缀不一定比 GPU 重算快，特别是前缀很短或网络拥塞时。调度决策应比较：
 
 $$
-T_{reuse}=T_{lookup}+T_{transfer}+T_{load}
+T_{reuse}=T_{queue,reuse}+T_{lookup}+T_{transfer}+T_{load}+f(H,U)
 $$
 
 与：
 
 $$
-T_{recompute}=T_{queue}+T_{prefill}
+T_{recompute}=T_{queue,recompute}+f(0,H+U)
 $$
 
-只有 $T_{reuse}<T_{recompute}$ 且不破坏其他请求 SLO，复用才是好选择。
+这里比较同一请求从等待执行到完成相同 prefill 工作的两条路径：$H$ 是实际复用的前缀长度，$U$ 是仍需计算的后缀长度；$f(H,U)$ 是固定模型、硬件和批次条件下的增量 prefill profile。后缀 query 仍要关注前 $H$ 个位置，因而不能用只处理 $U$ 个孤立 token 的 $f(0,U)$ 代替。同一 worker、相同排队条件的公共等待可以抵消；不同 worker 的排队不能只加在重算一侧。若传输与计算重叠，则改用各路径的实测关键路径时间。只有 $T_{reuse}<T_{recompute}$ 且不破坏其他请求 SLO，复用才是好选择。
 
 ## Transfer Engine 要解决哪些数据面问题
 
@@ -339,11 +341,11 @@ i^*=\arg\min_i
 \left(
 \widehat T_{queue,i}
 +\widehat T_{load,i}
-+\widehat T_{prefill}(S-P_i)
++\widehat T_{prefill}(P_i,S-P_i;\mathrm{config}_i)
 \right)
 $$
 
-其中 $P_i$ 是该节点可复用的前缀长度。论文使用离线 profile 拟合 prefill 执行时间；传输时间更难估计，因为它受实时网络拥塞和源节点热点影响。
+其中 $0\le P_i\le S$ 是该节点实际可跳过计算的前缀长度；完整 token 命中但没有末位 logits 时，引擎可能仍需重算尾 token。二维 prefill profile 同时包含前缀 attention 读取和剩余 token 计算，上式是解释性的成本模型，不是 Conductor 源码公式。论文使用离线 profile 拟合 prefill 执行时间；传输时间更难估计，因为它受实时网络拥塞和源节点热点影响。
 
 Decode 侧目标又不同：希望组成足够大的 batch 提高吞吐，同时受 TBT SLO 与 HBM 可容纳 KV 总量约束。于是 Conductor 实际在协调两个不同优化问题：
 

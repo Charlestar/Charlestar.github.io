@@ -3,7 +3,7 @@ layout: post
 title: "torch.compile：LLM Serving 从 Python Forward 到融合 GPU Kernel"
 subtitle: "沿着 Dynamo、FX、Guards、Inductor 与 Graph Break 理解编译收益和冷启动"
 date: 2026-07-31 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -298,7 +298,7 @@ do not decompose its internals unless a decomposition is registered
 - 保留针对硬件/形状深度优化的 kernel；
 - 提供明确 graph boundary；
 - fake/meta implementation 支持 shape tracing；
-- 可标记 mutation、alias 与 CUDA Graph safety；
+- schema/fake implementation 可声明 mutation、alias 与 shape；CUDA Graph safety 还要由实现和 runtime 单独保证；
 - runtime 可按 backend dispatch。
 
 代价：
@@ -406,7 +406,7 @@ Key 不完整会加载不兼容 artifact；过度细化则 cache 命中低。Cac
 
 JIT 把编译放在首次请求/worker warmup；Ahead-of-Time 能在部署前完成 trace、Inductor codegen、Triton compile/autotune 并打包 artifact，降低冷启动。
 
-PyTorch 当前也提供实验性的 `torch.compile().aot_compile()` 路径，但文档明确其特性和限制仍在演进，例如 AOT full capture 对 graph breaks 更严格。生产使用应固定版本并验证：
+PyTorch 当前也提供实验性的 [`torch.compile(...).aot_compile()` 路径](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/torch.compiler_aot_compile.html)，要求 `fullgraph=True`，不支持 graph breaks；它返回可在 Python runtime 中加载的 artifact，与 `torch.export` + AOTInductor 的部署路径不是同一个接口。特性和限制仍在演进，生产使用应固定版本并验证：
 
 - target GPU/driver compatibility；
 - dynamic shape guards；
@@ -430,7 +430,7 @@ Tracing 用 fake/meta implementation 推导 shape/stride，真实 CUDA implement
 
 ### Python Side Effect 被省略
 
-Capture 的 graph replay 不会按 eager 次数重新运行被消除的普通 Python side effect。请求计数、cache lease、日志不能偷偷放在 model forward 内依赖执行次数。
+普通 `torch.compile` 不意味着可以任意删除 Python 副作用：Dynamo 会对支持的行为保留语义，或通过 graph break 回到 Python。需要警惕的是把有副作用的函数当作 pure function 使用 non-strict tracing、错误的 custom op 契约，以及外层 CUDA Graph 只重放设备操作的情况。请求计数、cache lease、日志应放在明确的 host/runtime 边界，不能依赖“trace 一次”与“执行一次”碰巧重合。
 
 ### Guard 漏项
 
@@ -520,14 +520,16 @@ T_{compile,total}
 =T_{trace}+T_{codegen}+T_{kernel\ compile}+T_{autotune}
 $$
 
-### Break-even requests
+### Break-even 调用次数
 
-若 eager 每次耗时 $T_e$，compiled 稳态 $T_c$，一次 compile 成本 $T_{comp}$，粗略摊平需要：
+若同一 graph variant 的 eager 每次调用耗时 $T_e$，compiled 稳态耗时 $T_c$，新增一次 compile 成本 $T_{comp}\ge0$，在 $T_e>T_c$ 时，粗略摊平需要：
 
 $$
 N_{break-even}
-=\frac{T_{comp}}{T_e-T_c}
+=\left\lceil\frac{T_{comp}}{T_e-T_c}\right\rceil
 $$
+
+单位是该 variant 的调用次数，不是请求数：一个请求可能经历许多 decode iterations，一次调用也可能合批处理多条请求。$T_e\le T_c$ 且存在正编译成本时没有有限的时间回本点；多次重编译、cache load 和额外 capture 成本需按同一口径加入分子。
 
 Worker 生命周期或某 graph variant 调用次数低于它，编译可能得不偿失。
 

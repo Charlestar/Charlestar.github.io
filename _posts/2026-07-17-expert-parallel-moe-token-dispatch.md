@@ -3,7 +3,7 @@ layout: post
 title: "Expert Parallel：MoE Token 为什么要两次穿过 GPU 网络"
 subtitle: "从 EP 分组、All-to-All 通信量到 Prefill/Decode 的并行选择"
 date: 2026-07-17 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: moe-communication
@@ -437,7 +437,7 @@ $$
 =N_tk
 $$
 
-若存在 padding，要分别统计 valid assignments 与 padded rows。
+这里 $N_{send,r}$、$N_{recv,r}$ 计数的是逻辑 expert assignments，包含本地执行，而非实际网络 packet 或去重后的 hidden-state rows；假定每 token 恰好选择 $k$ 个有效 experts 且不 dropping。若存在 padding、无效 `-1` slot 或可变 Top-k，要按有效路由逐项计数。相同 token 发往同一 rank 的 hidden state 去重，不违反逻辑 assignment 守恒。
 
 ### Expert 所有权一致
 
@@ -445,7 +445,7 @@ $$
 
 ### Combine 归位一致
 
-每个 source token 恰好接收 $k$ 份对应 output；inverse permutation 与 Top-$k$ slot 不可重复或遗漏。
+每个 source token 的最终结果恰好包含 $k$ 份逻辑 expert contribution；inverse permutation 与 Top-$k$ slot 不可重复或遗漏。同一 destination 可以先做局部加权归约再返回，因此物理返回 row 数不一定等于 $k$。
 
 ### 单卡参考对齐
 

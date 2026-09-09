@@ -3,7 +3,7 @@ layout: post
 title: "分布式 LLM 推理故障恢复：一条流式请求怎样活下来"
 subtitle: "从健康检测、请求迁移到 KV 状态、优雅下线与过载保护"
 date: 2026-07-14 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-inference
@@ -235,7 +235,9 @@ $$
 P' = P \Vert (y_1, \ldots, y_k)
 $$
 
-重新送入健康 worker。新 worker 对 $P'$ 执行 Prefill，重建 KV，然后从位置 $k+1$ 继续 decode。
+重新送入健康 worker。新 worker 对 $P'$ 执行 Prefill，重建 KV，并用末位 logits 采样下一个输出 $y_{k+1}$；不需要先额外做一次 decode forward 才能得到它。之后才逐步送回新输出继续 decode。
+
+重放请求还必须保留原始 prompt/output 分界，并把剩余输出预算改成原始 `max_new_tokens` 减去已提交数量。不能只把所有 token 当作新 prompt、重置输出计数：只针对 generated tokens 的 frequency/presence penalty、长度约束和有状态 logits processor 可能因此改变语义。[Dynamo 的 Request Migration 文档](https://github.com/ai-dynamo/dynamo/blob/main/docs/pages/fault-tolerance/request-migration.md)明确说明要随 token 累积更新剩余预算；更完整的 processor 状态是否可恢复，仍需按 backend 验证。
 
 这里的难点不在拼接 token，而在“$k$ 到底是多少”。需要至少区分：
 
@@ -305,7 +307,7 @@ ALLOCATED → WRITING → SEALED → PUBLISHED
                    ↘ ABORTED
 ```
 
-只有 `PUBLISHED` block 才能被 D worker 消费。P worker 在 `WRITING` 阶段崩溃，后台回收器根据 lease 清理孤儿 block。
+只有 `PUBLISHED` block 才能被 D worker 消费。P worker 在 `WRITING` 阶段崩溃，后台回收器根据 lease 识别孤儿 block，并在确认相关 GPU/传输访问结束或已被安全撤销后回收。
 
 ### KV 已发布，D worker 尚未接管
 
@@ -320,7 +322,7 @@ ALLOCATED → WRITING → SEALED → PUBLISHED
  destination_generation, block_range, transfer_epoch)
 ```
 
-失败后可从其他 source 重传，也可回退到 recompute。迟到的旧 transfer completion 因 generation 或 epoch 不匹配而被丢弃。
+失败后可从其他 source 重传，也可回退到 recompute。迟到的旧 transfer completion 因 generation 或 epoch 不匹配而被丢弃。但拒绝旧回执不会停止已发出的 DMA；复用目标地址或向其中写入重试数据前，必须先 drain/abort 旧传输并确认不存在迟到写入，必要时隔离旧 buffer。[GPUDirect RDMA §3.3](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#unpin-callback)
 
 ### Decode 已经开始流式输出
 
@@ -421,6 +423,7 @@ client disconnect
   → pending Prefill cancelled
   → KV transfer cancelled
   → Decode sequence removed from scheduler
+  → in-flight GPU/DMA access drained or safely revoked
   → KV leases released
   → tool / child requests cancelled where safe
 ```
@@ -459,11 +462,13 @@ cancel:  8 → 9
 
 ## 恢复容量要在故障前预留
 
-请求迁移会制造额外工作。设正常 Prefill 负载为 $L_p$，失败实例上有 $N_f$ 条请求需要重放，其恢复输入长度为 $s_i$，单位 token Prefill 成本为 $c_p$，希望在 $T_r$ 内消化，那么额外恢复能力近似为：
+请求迁移会制造额外工作。设失败实例上有 $N_f$ 条请求需要重放，恢复输入长度为 $s_i$、可复用前缀为 $h_i$。在固定模型、硬件、并行布局与批次策略下，用 profile 估计其工作量 $g(h_i,s_i-h_i)$，单位为 GPU·秒。希望在 $T_r>0$ 秒内消化，那么可用于重放的额外 GPU 能力至少应满足以下工作守恒下界：
 
 $$
-C_{recovery} \ge \frac{c_p \sum_{i=1}^{N_f} s_i}{T_r}
+C_{recovery} \ge \frac{\sum_{i=1}^{N_f} g(h_i,s_i-h_i)}{T_r}
 $$
+
+右侧单位是 GPU，配置时还要向上取整到完整并行实例。只有在局部 profile 可近似线性时，才可用 $g(0,s)\approx c_ps$，其中 $c_p$ 的单位必须是 GPU·秒/token；长上下文 attention 不能全局按 token 常数估价。排队、网络、启动和 SLO 余量仍需另行计入，这不是恢复时延保证。
 
 如果集群平时已经以 99% 利用率运行，迁移只会把故障从一个实例扩散到其余实例。容量规划应包含：
 

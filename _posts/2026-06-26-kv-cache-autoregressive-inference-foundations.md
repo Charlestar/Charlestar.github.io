@@ -58,7 +58,7 @@ K^{(\ell)}=X^{(\ell)}W_K^{(\ell)},\qquad
 V^{(\ell)}=X^{(\ell)}W_V^{(\ell)}
 $$
 
-由于 causal mask，历史位置 $1\ldots L$ 的 hidden state 不会依赖未来新增 token。只要模型权重和前缀内容不变，它们在下一轮得到的 K/V 也不变。
+在标准 causal decoder 的确定性推理路径中，历史位置 $1\ldots L$ 的 hidden state 不会依赖未来新增 token。模型权重、前缀 token、位置编码与 mask 配置保持一致，且关闭训练时 dropout 等随机操作时，历史 K/V 可以复用。若位置编码配置随总长度改变并影响旧位置，或模型有非因果的全序列运算，就不能只凭文本前缀相同推断缓存等价。
 
 真正新增的只有位置 $L+1$ 对应的：
 
@@ -148,7 +148,7 @@ Prefill 计算量大、token 并行度高，通常偏计算密集；decode 每�
 
 ## 不使用 Cache 时，复杂度怎样增长
 
-假设 prompt 长度 $L$，需要生成 $T$ 个 token。把产生第一个生成 token 的 prompt forward 记为 $t=0$，此时输入长度为 $L$；产生后续 token 时，输入长度依次为 $L+1,\ldots,L+T-1$。
+假设 prompt 长度 $L\ge1$，需要生成 $T\ge1$ 个 token，二者均为整数；这里讨论普通自回归采样，不含推测验证或提前终止。把产生第一个生成 token 的 prompt forward 记为 $t=0$，此时输入长度为 $L$；产生后续 token 时，输入长度依次为 $L+1,\ldots,L+T-1$。若请求不生成 token，下面的 $L+T-1$ 计数不适用。
 
 仅从线性投影和 MLP 的 token 工作量看，总处理 token 数约为：
 
@@ -501,14 +501,16 @@ branch 2: [A][B][C2]
 ACTIVE
 -> cancellation requested
 -> stop future scheduling
--> wait/mark current GPU step result as discardable
+-> mark future outputs as discardable
+-> wait for relevant GPU work to finish
+-> cancel or drain transfers
+-> confirm no in-flight GPU/DMA access remains
 -> release private blocks
 -> decrement shared refs
--> cancel or drain transfers
 -> FINISHED
 ```
 
-正在执行的 GPU kernel 通常无法移除单个请求，本轮写入可能仍会发生。Allocator 不能在确认相关 work 完成前立刻把同一 block 给新请求，否则会发生 use-after-free。
+正在执行的 GPU kernel 通常无法移除单个请求，本轮写入可能仍会发生。丢弃输出也不会取消已发起的 RDMA。Allocator 不能在确认相关 GPU 与传输 work 都不再访问前，把同一 block 给新请求，否则会发生 use-after-free。[GPUDirect RDMA 文档 §3.3](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#unpin-callback)同样要求撤销映射时处理尚未完成的 DMA；这里只给出上层生命周期顺序，不要求应用直接使用驱动回调 API。
 
 压力测试应在 prefill 中间、decode 中间、block 边界和 transfer 中分别取消，检查 cache usage 最终回落。
 

@@ -302,10 +302,10 @@ DeepEP dispatch/combine 接口允许传递 top-k weights，并由 handle 关联�
 一些 MoE 架构除了 routed experts，还包含每个 token 都经过的 shared expert。若 shared expert 的输入已在本地，且与 routed dispatch 没有依赖，可以形成：
 
 ```text
-stream comm:     routed expert dispatch ──────────────┐
-stream compute:  shared expert GEMM ───────────────┐  │
-                                                   ▼  ▼
-                                             merge outputs
+routed branch:  dispatch ── routed expert GEMM ── combine ──┐
+shared branch:  shared expert GEMM ────────────────────────┤
+                                                         ▼
+                                                   merge outputs
 ```
 
 这是比“随便找点计算重叠”更可靠的候选，因为 shared expert 与远端 routed expert 从同一输入分叉。实际收益仍取决于 SM/HBM 争用和 merge 依赖；如果通信 kernel 抢占过多 SM，shared GEMM 会拉长。
@@ -422,13 +422,13 @@ DeepEP 官方仓库提供测试，但接入一个具体模型仍需做端到端�
 9. 多节点 rank mapping 改变；
 10. handle 被错误复用时能够检测或测试失败。
 
-验证不变量包括：
+验证不变量包括逻辑 assignment 守恒：
 
 $$
 N_{valid,send}=N_{valid,recv}=N_tk
 $$
 
-以及分布式 MoE output 与参考实现的数值误差。对 FP8 路径，应先验证 BF16 完全正确，再单独引入量化误差；不要同时调 permutation 和 dtype，避免错误互相掩盖。
+这里的 $N_{valid,send}$、$N_{valid,recv}$ 均按 expert assignment 展开计数，包含本地执行；假定每 token 恰有 $k$ 个有效 expert。它不是 `num_recv_tokens` 等去重行数，也不包含 alignment padding；存在 `-1` 无效 slot 时应改为实际有效 assignment 总数。还要检查分布式 MoE output 与参考实现的数值误差。对 FP8 路径，应先验证 BF16 完全正确，再单独引入量化误差；不要同时调 permutation 和 dtype，避免错误互相掩盖。
 
 ## 性能基准要避免“逻辑带宽”误读
 
