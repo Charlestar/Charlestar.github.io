@@ -3,7 +3,7 @@ layout: post
 title: "GPUDirect RDMA：网卡如何直接访问 GPU Memory"
 subtitle: "从 PCIe BAR、内存注册与 rkey 到有序完成和可恢复数据面"
 date: 2026-08-30 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-training
@@ -152,6 +152,8 @@ GDR 不改变 verbs 的基本语义。
 #### One-sided RDMA Write
 
 initiator 持有远端地址和 `rkey`，本地 NIC 读取本地 source buffer，并让远端 NIC 写入 target GPU buffer。远端 CPU 不需要为每次 payload 预先执行 receive，但应用仍要解决“远端如何知道写完”。常见做法是 Write with Immediate、额外 control message、doorbell/notification 或上层状态机。
+
+这里“不需要 receive”指普通 RDMA Write。**在常规 RC verbs 路径上，Write with Immediate 仍消耗远端 RQ/SRQ 上预先提交的 receive WQE**；payload 写到 WR 指定的 remote address，而不是该 receive WQE 的数据 buffer。缺少接收信用会触发 RNR，不能因为采用单边写就省去通知通道的补充与回收。[NVIDIA RDMA 编程手册 §3.3.2](https://docs.nvidia.com/rdma-aware-networks-programming-user-manual-1-7.pdf) 明确列出了这一条件。个别 provider 的 unsolicited receive 扩展另有能力要求，不属于这里的通用假设。
 
 #### One-sided RDMA Read
 
@@ -504,7 +506,7 @@ IN_FLIGHT ── CQ / backend completion ───────► TRANSFER_DONE
     │ error / revoke                              │ consumer finishes
     ▼                                             ▼
 INVALIDATING ◄────────────────────────────── CONSUMED
-    │ stop admission + drain + unpublish
+    │ stop admission + unpublish + remote quiesce/drain
     ▼
 DEREGISTERED
     │
@@ -516,8 +518,8 @@ FREED / RETURNED_TO_POOL
 
 1. `REGISTERED` 前不能发布 rkey；
 2. `IN_FLIGHT` 时不能 deregister、free 或让 allocator 把同一地址交给另一个对象；
-3. 停机先停止新请求，再撤销 metadata，随后 drain outstanding WR；
-4. 只有 NIC 与 GPU consumer 都释放引用，才可回到 pool；
+3. 停机先停止新请求，再撤销 metadata，使已持有 descriptor 的远端也停止新访问，随后 drain outstanding WR；
+4. 只有已排除迟到 DMA、NIC 与 GPU consumer 都释放引用，才可回到 pool；
 5. GPU reset、process exit、dmabuf revoke 或 free callback 会把状态异步推向 `INVALIDATING`。
 
 ### `cudaMallocAsync` 与 Memory Pool 增加了一层 Generation
@@ -528,11 +530,15 @@ stream-ordered allocator 允许 free 先进入 stream，而底层 allocation 继
 
 - 从长期注册的 arena 中 suballocate，arena 的物理 backing 在整个服务期稳定；
 - 每个 suballocation 携带 generation，并让远端 metadata 同时携带 generation；
-- allocator free hook 先阻止新 transfer，再等待 in-flight 归零；
+- allocator free hook 先阻止本地与远端的新 transfer，再等待覆盖两端既有访问的 in-flight 归零；
 - CUDA VMM remap 后重新导出 DMA-BUF handle，不能沿用旧 handle；
 - 使用 `CU_POINTER_ATTRIBUTE_BUFFER_ID` 或等价 allocator identity 检测地址复用。
 
 地址相同不等于 allocation 相同；MR 存活不等于其上层对象仍合法。
+
+还要区分**逻辑 generation 与硬件访问权限**。普通 RDMA WR 携带的是 remote address、length 与 rkey，NIC 不会替应用检查 descriptor 中的 object generation。假设旧请求拿到了 arena 内 slot A 的地址和长期有效的 rkey；A 超时后被分配给对象 B，即使发布端拒绝旧 generation 的完成消息，迟到的 Write 仍可能覆盖 B 的字节。目录撤销和本地引用归零都不能单独排除这个反例。
+
+因此，复用前必须证明所有持有旧 descriptor 的 peer 已停止提交并且既有访问已经 drain；若故障 peer 无法确认，就隔离旧 slot，使用 provider 支持的 MR/MW 撤权及连接恢复流程，并等待相应完成保证后才回收。长期 arena 不必每次都重新注册，但它要求上层提供同样严格的 quiescence/lease 与访问追踪。只改 generation、关闭 DMA-BUF fd、执行 CPU fence，或把 `IBV_SEND_FENCE` 当成跨 QP 全局撤权，都不能替代这一步。可对照 [rdma-core 的 WR 字段与复用条件](https://man7.org/linux/man-pages/man3/ibv_post_send.3.html)、[MR/rkey 语义](https://man7.org/linux/man-pages/man3/ibv_reg_mr.3.html) 和 [MW 绑定完成语义](https://man7.org/linux/man-pages/man3/ibv_bind_mw.3.html)；具体撤权顺序仍需按 provider 与 MW 类型验证。
 
 ### Registration 为什么必须缓存
 
@@ -583,7 +589,7 @@ NVIDIA 旧 API 示例建议按 64 KiB 边界对齐，因为同一 GPU page 内�
 
 1. 标记 entry 为 draining，拒绝新引用；
 2. 从 remote metadata/lookup 中撤销该 generation；
-3. 等待所有 WR completion 和 consumer reference；
+3. 确认已持有 descriptor 的远端不再提交，等待既有 WR completion 和 consumer reference；不能确认时隔离 entry，并走已验证的撤权/故障流程；
 4. deregister MR，detach/unmap DMA-BUF 或 peer mapping；
 5. 最后才允许 allocation free/remap。
 
@@ -659,7 +665,9 @@ NIXL 推荐在初始化阶段注册长期使用的 memory segments，把 metadat
 
 ### Mooncake：Segment、Store 与 KV 语义
 
-Mooncake Transfer Engine 用 Segment/Buffer 和 BatchTransfer 组织 DRAM/VRAM/NVMe-oF 数据移动，当前文档列出 TCP、RDMA、cuFile、NVLink 等 transport，并默认可走 DMA-BUF；设置 `WITH_NVIDIA_PEERMEM` 才选择对应 legacy registration 路径。
+Mooncake Transfer Engine 用 Segment/Buffer 和 BatchTransfer 组织 DRAM/VRAM/NVMe-oF 数据移动，文档列出 TCP、RDMA、cuFile、NVLink 等 transport。GPU registration 的默认项必须核对版本：以 [v0.3.12 的 `Environ::Environ`](https://github.com/kvcache-ai/Mooncake/blob/v0.3.12/mooncake-common/src/environ.cpp) 为准，`WITH_NVIDIA_PEERMEM` 是运行时环境变量，未设置时默认 `true`，不是默认 DMA-BUF。需要 DMA-BUF 时在启动前显式设为 `0`；设为 `1` 则选择需要 `nvidia-peermem` 的传统 `ibv_reg_mr` 路径，并分别满足所需的 allocator、driver 与 provider 条件。
+
+这里不能只引用“当前文档”：截至本文修改日期，部分 Transfer Engine 设计文仍写未设置时使用 DMA-BUF，但 [2026-05-22 合并的默认值修改](https://github.com/kvcache-ai/Mooncake/pull/2192)、上述 release 源码及当前主线配置实现都表明默认值已经改变。部署时应记录实际 wheel/tag、显式配置与注册日志，不能用文档中的旧默认值推断数据路径。
 
 Mooncake Store/Conductor 位于更上层：决定 KV block 是否缓存、放在哪里、何时复制和淘汰。Transfer Engine 报告 RDMA 完成，不代表 Store 已提交对象 metadata；Store 命中也不代表传输 path 一定是 GDR。分层监控必须分别给出 cache decision、transfer backend 与底层 MR/CQ 状态。
 
@@ -717,6 +725,8 @@ stale rkey、错误 address/length、权限不匹配或远端已 deregister 会�
 - 对重复 write 保证幂等，或让旧 generation 永远不可见；
 - checksum/length/schema 验证通过后才进入 `PUBLISHED`；
 - endpoint reset 后不继续使用旧 rkey cache。
+
+这里“旧 generation 不可见”只阻止错误对象发布，不会阻止 NIC 写内存。旧 target slot 必须保持隔离，直到旧访问已 drain 或撤权流程保证迟到访问不能再修改它；否则换一个 transfer id 后在同一地址重试，仍可能被旧 Write 覆盖。
 
 ### GPU Reset、进程退出与 revoke
 
@@ -921,7 +931,7 @@ DMA-BUF 的主要优势是上游接口、生命周期与部署方向。性能取
 4. **顺序不变量**：producer completion 先于 NIC read，NIC write completion 先于 consumer launch；
 5. **生命周期不变量**：任何 in-flight DMA 都持有 allocation、MR、endpoint 与 metadata 引用；
 6. **提交不变量**：transport completion 与应用对象发布分离，校验后才提交；
-7. **恢复不变量**：timeout/endpoint failure 不复用未知状态的 target，旧 generation 不再可见；
+7. **恢复不变量**：timeout/endpoint failure 不复用未知状态的 target；既拒绝旧 generation 发布，也在物理复用前排除迟到 DMA；
 8. **可观测不变量**：每次 transfer 能回答 backend、direct/fallback、GPU/NIC、MR generation 与 terminal state。
 
 这些约束比某个环境变量更能决定 GDR 是否可长期运行。

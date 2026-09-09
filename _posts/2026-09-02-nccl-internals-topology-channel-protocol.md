@@ -3,7 +3,7 @@ layout: post
 title: "NCCL 内部机制：一次 AllReduce 如何变成拓扑图、Channel 与 GPU Kernel"
 subtitle: "沿着 NCCL 2.31.2 的真实执行路径，理解调优、传输与故障诊断"
 date: 2026-09-02 02:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-training
@@ -420,12 +420,14 @@ connector 的 Simple/LL/LL128 buffer 通常按 <code>NCCL_STEPS</code> 划分循
 logical tensor
   +-- channel 0 part
   |     +-- chunk 0
-  |     |     +-- slice 0 -> FIFO step s
-  |     |     \-- slice 1 -> FIFO step s+1
+  |     |     +-- slice 0 -> FIFO starting step s
+  |     |     \-- slice 1 -> FIFO starting step s + sliceSteps
   |     \-- chunk 1 ...
   |
   \-- channel 1 part ...
 ~~~
+
+一个 slice 不一定只推进一个 step。在 Simple primitive 的 [waitPeer/postPeer](https://github.com/NVIDIA/nccl/blob/v2.31.2-1/src/device/prims_simple.h) 中，计数按 `StepPerSlice` 增长；host 端 `calcCollChunking` 则分别保存 `chunkSteps` 与 `sliceSteps`，并计算 `sliceSize = chunkSize / chunkSteps * sliceSteps`。例如 `chunkSteps=4、sliceSteps=2` 时，一个 chunk 对应两个 slice、四个 FIFO step，不能画成两个 slice 就只推进两步。即使尾部某个 slice 没有有效 payload，协议也可能继续推进它的同步计数，避免两端 step 失配。
 
 具体 chunk 大小会受协议 buffer、数据类型、rank 数、channel 数、算法和尾部对齐共同影响，不应从一个 benchmark 的日志推导成固定常数。
 
@@ -908,7 +910,9 @@ capture 时，plan、work buffer、registration handle 与清理 callback 不能
 
 ### Revoke、Shrink 与“自动容错”的边界
 
-2.31.2 的公开 API 已包含 <code>ncclCommRevoke</code> 和 <code>ncclCommShrink</code>。Revoke 可以让 communicator 停止接受新 collective，并使其进入可安全 destroy/split/shrink 的 quiesced 状态；<code>NCCL_SHRINK_ABORT</code> 可在排除失败 ranks 时处理未完成操作。
+2.31.2 的公开 API 已包含 <code>ncclCommRevoke</code> 和 <code>ncclCommShrink</code>。Revoke 可以让 communicator 停止接受新 collective，并使其进入可安全 destroy/split/shrink 的 quiesced 状态。但**发起 revoke 不等于撤销已经完成**：[API 文档](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/comms.html#ncclcommrevoke) 允许非阻塞调用返回 <code>ncclInProgress</code>，此时必须继续查询 <code>ncclCommGetAsyncError</code>，直到得到 <code>ncclSuccess</code>，才能按完成后的生命周期约束操作资源；若出现错误则转入错误恢复，而不是继续轮询至任意非 busy 状态后就释放。
+
+<code>NCCL_SHRINK_DEFAULT</code> 要求 parent communicator 没有 outstanding NCCL 操作；<code>NCCL_SHRINK_ABORT</code> 才会在排除失败 ranks 时中止 parent 上的未完成操作，而且不会与新 communicator 共享 parent 资源。不能只把 shrink 理解为修改一个 rank 列表。
 
 这并不意味着 AllReduce 可以在一个 rank 消失后自动给剩余 ranks 返回“部分和”。collective 的成员与数学结果已经变化，上层必须明确重建 group、恢复数据 placement，并决定本次训练 step 是重放还是丢弃。
 
