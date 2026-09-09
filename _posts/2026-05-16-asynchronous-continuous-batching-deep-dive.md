@@ -3,7 +3,7 @@ layout: post
 title: "异步连续批处理：CPU/GPU 重叠与正确同步"
 subtitle: "沿着相邻两个 Engine Step 拆解调度流水线"
 date: 2026-05-16 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -67,9 +67,8 @@ step m: [E, F, C, D]
 ```text
 time ─────────────────────────────────────────────────────►
 
-CPU: [C0]       [F0 C1]       [F1 C2]       [F2 C3]
-GPU:     [ G0 ]         [ G1 ]         [ G2 ]
-          ↑ idle          ↑ idle          ↑ idle
+CPU: [ C0 ][等待 G0][ F0 + C1 ][等待 G1][ F1 + C2 ]
+GPU: [idle][  G0   ][  idle   ][  G1   ][  idle   ]
 ```
 
 GPU 两轮之间的 idle gap 可能来自 Python scheduler、block table 组装、CPU-GPU copy、`.item()` 读取或 sampling 后处理。模型越小、batch 越轻，固定 CPU 开销占比通常越显眼。
@@ -153,13 +152,16 @@ $$
 
 无论哪种，用户可见输出、KV 正式长度和计费都只能包含 committed token。多算可以是性能权衡，绝不能变成多返回 token 或越过 `max_tokens`。
 
-异步系统最常见的正确性风险正来自“scheduled/computed/committed”三个长度混用。建议把它们明确建模：
+异步系统最常见的正确性风险正来自输入计算进度与输出提交进度混用。两者不是同一个计数器。对同一请求、同一执行分支上的输入位置，可以维护：
 
 ```text
-num_scheduled >= num_computed >= num_committed
+scheduled_input_frontier >= materialized_input_frontier
+committed_output_count: 单独记录已验证且通过停止条件处理的输出数
 ```
 
-只有依赖完成、采样验证和停止条件处理后，computed 才能进入 committed。
+这里的 frontier 是从序列起点计数的输入前缀长度：前者包含已预留的在途计算，后者表示 K/V 等状态已经真正生成的位置；它们不是本轮 token 数。输出提交则来自 logits 采样与验证，不能再接上一条 `materialized >= committed_sequence_length` 的不等式。例如 1000-token prompt 完成 prefill 并采样首 token 后，已计算输入长度是 1000，正式序列长度却是 1001；最后一个输出还没有自己的 KV。推测分支被拒绝、取消或抢占时，还要分别回收在途资源和校正分支状态。
+
+实现字段的名字也不保证它对应上述物理完成边界。截至 2026-09-09，[vLLM Scheduler 的 `_update_after_schedule`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py)会在发出调度后先推进 `num_computed_tokens`，后续再根据拒绝或失败结果调整。读取这个 host 字段不能替代等待 GPU completion event。
 
 ## 双缓冲不是简单交换两个 Tensor
 

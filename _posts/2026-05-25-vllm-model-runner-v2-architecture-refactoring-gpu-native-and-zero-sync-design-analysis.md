@@ -18,9 +18,8 @@ tags: [推理调度, vLLM, GPU优化]
 当模型很大、单步 GPU 计算很长时，几十或几百微秒的 CPU 准备不显眼。GPU 越快、模型越小、batch step 越短，Python 循环、小 tensor copy 和一次无意的 GPU→CPU 同步就越容易变成气泡：
 
 ```text
-CPU: prepare N       prepare N+1       prepare N+2
-GPU:           run N           run N+1           run N+2
-               ^ 等 CPU         ^ 等 CPU
+CPU: [prepare N][等待 N][prepare N+1][等待 N+1]
+GPU: [  idle   ][run N ][   idle    ][run N+1 ]
 ```
 
 Model Runner V2（MRV2）是对这条执行热路径的重写。它不改变用户的 OpenAI API，也不是“vLLM V2”；它重新安排请求状态、每步输入、CPU/GPU 所有权与 sampler，使目标时间线变成：

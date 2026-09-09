@@ -3,7 +3,7 @@ layout: post
 title: "DeepSeek V3.2 稀疏注意力：Lightning Indexer 与 Top-k 选择"
 subtitle: "从 MLA 全量访问到内容相关的细粒度稀疏化"
 date: 2026-05-18 12:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: attention-long-context
@@ -90,8 +90,10 @@ $$
 
 $$
 \mathcal S_t
-= \{s\mid I_{t,s}\in TopK(I_{t,:})\}
+=\operatorname{TopKIndices}\bigl((I_{t,s})_{0\le s\le t},\min(k,t+1)\bigr)
 $$
+
+这里按从 0 开始的位置计数，选出的是至多 $k$ 个**位置索引**，不是“分数属于前 k 个值”的所有位置。后者在边界同分时可能多选：分数 `[3,2,2,1]` 的 Top-2 只能保留两个位置，而按值 `3` 或 `2` 做集合过滤会得到三个。相同分数的 tie 选择以具体 kernel 规则为准，短前缀则保留全部合法位置；padding 与未来位置不参与选择。
 
 主 attention 只读取这些位置：
 

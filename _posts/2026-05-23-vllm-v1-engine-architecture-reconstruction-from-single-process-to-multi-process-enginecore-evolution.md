@@ -155,7 +155,7 @@ Worker 的 ModelRunner 构造 input batch，执行 embedding、各 Transformer �
 
 ### 7. Scheduler 提交结果
 
-ModelRunner output 返回 EngineCore。Scheduler 增加请求的 `num_computed_tokens`，接纳实际 sampled token，检查 EOS、长度与停止条件，释放已完成请求的 KV blocks，并生成 `EngineCoreOutputs`。
+ModelRunner output 返回 EngineCore 后，Scheduler 接纳实际 sampled token，按验证结果校正进度，检查 EOS、长度与停止条件，并生成 `EngineCoreOutputs`；已完成请求的 KV 要在没有在途写入后安全释放。注意，`num_computed_tokens` 并不是直到这里才增加：当前 Scheduler 的 `_update_after_schedule` 在调度完成后就先计入本轮预定工作，以便下一轮可以继续排程；拒绝的 speculative tokens 等再由 `update_from_output` 调整。这个 host 计数包含在途工作，不等于 GPU 的物理完成事件。
 
 ### 8. Frontend 处理并流式返回
 
@@ -227,7 +227,7 @@ $$
 
 传统描述常把请求分成 prefill queue 与 decode queue，再为两套对象设计不同状态机。V1 更统一地维护两个进度：
 
-- `num_computed_tokens`：KV/模型已经实际计算到哪里；
+- `num_computed_tokens`：调度器用于追踪输入计算的进度，包含已命中的缓存，也可能已计入尚未完成的在途工作；
 - `num_tokens_with_spec`：prompt、已生成输出与当前 speculative tokens 总共要求计算到哪里。
 
 本轮需要追赶的工作量近似为：

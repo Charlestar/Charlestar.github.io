@@ -98,7 +98,7 @@ $$
 考虑目标模型已经算出 $f_2$。LM Head 将它映射为下一个 token 的分布 $p_3$：
 
 $$
-p_3=\operatorname{LMHead}(f_2)
+p_3=\operatorname{Softmax}(\operatorname{LMHead}(f_2))
 $$
 
 假设这个分布对多个 token 都保留概率：
@@ -514,10 +514,10 @@ EAGLE 没有减少目标模型的权重，也没有绕过目标验证。它试�
 $$
 \operatorname{TPOT}_{EAGLE}
 \approx
-\frac{T_d+T_v+T_o}{E[L]}
+\frac{\mathbb E[T_d+T_v+T_o]}{\mathbb E[L]}
 $$
 
-只有它小于基线单步 decode 的 TPOT，系统才真正加速。
+这里按许多推测轮的总耗时除以总提交 token 数，要求 $\mathbb E[L]>0$；不是先计算每轮耗时/token 再对各轮等权平均。若把各项耗时视为常数，分子才可直接写成 $T_d+T_v+T_o$。首 token、EOS 和输出上限截断应在两边采用同一统计口径。只有它小于基线单步 decode 的 TPOT，系统才真正加速。
 
 feature-level drafter 有几个潜在优势：
 

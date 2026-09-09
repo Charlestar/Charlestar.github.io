@@ -246,7 +246,7 @@ $$
 
 共置执行时，长 prefill 可能与正在 decode 的请求争用 GPU，造成 inter-token latency 抖动。P/D 解耦让两类 worker 分别扩缩容、选择并行度与 kernel，并避免长 prompt 直接干扰 decode 池。
 
-但拆开后必须支付 KV 转移成本。若模型有 $$L$$ 层、每 token KV 元素数为 $$d_{kv}$$、数据类型为 $$b$$ bytes，长度 $$s$$ 的 prompt 所需 KV 规模可粗略表示为：
+但拆开后必须支付 KV 转移成本。对 K/V 同尺寸的标准 MHA/GQA，若模型有 $$L$$ 层，每层每 token 的**单侧 K（或 V）**元素数为 $$d_{kv}=H_{kv}D$$、数据类型为 $$b$$ bytes，长度 $$s$$ 的 prompt 所需 KV 规模可粗略表示为：
 
 $$
 S_{kv}\approx 2Lsd_{kv}b

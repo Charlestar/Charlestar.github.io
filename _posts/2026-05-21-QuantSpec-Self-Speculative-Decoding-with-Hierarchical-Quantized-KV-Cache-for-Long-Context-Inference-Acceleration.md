@@ -3,7 +3,7 @@ layout: post
 title: "QuantSpec：分层量化 KV Cache 的自推测解码"
 subtitle: "用同一份位平面同时服务 INT4 草稿与 INT8 验证"
 date: 2026-05-21 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -135,8 +135,8 @@ $$
 
 Key 和 Value 的异常值结构并不相同。QuantSpec 延续 KV 量化研究中的常见观察：
 
-- K 沿 channel 方向量化更有利于控制误差；
-- V 沿 token 方向量化更合适；
+- K 使用 channel-wise 分组量化：固定 channel，在一组连续 token 中估计尺度；
+- V 使用 token-wise 分组量化：固定 token，在一组 channel 中估计尺度；
 - 两者都采用 per-group asymmetric quantization；
 - 论文实验把 group size $G$ 设为 head dimension，以平衡误差与 metadata/执行开销。
 
@@ -187,7 +187,7 @@ $$
 - $C_{F_1}$ 保存已经确认、但暂未量化的最近一组 token；
 - $C_{F_2}$ 接收本轮及后续 decode 新产生的 token，其中可能包含未验证候选。
 
-Prefill 完成后，大部分前缀被转换为 $C_U,C_L$，最近至少 $G$ 个 token 留在 $C_{F_1}$。Decode 时新 KV 只追加到 $C_{F_2}$。
+在论文的长前缀设置下，prefill 完成后较早前缀转换为 $C_U,C_L$，最近 $G$ 到 $2G$ 个 token 保持全精度：其中 $C_{F_1}$ 容纳一组 $G$ 个，其余由 $C_{F_2}$ 容纳。Decode 时新 KV 追加到仍有空间的近期 buffer。若整个前缀不足 $G$ 个 token，就只能保留实际存在的全部 token，先走短前缀填充路径；“至少保留 G 个”不是在任意短输入下也成立的容量断言。
 
 一次推测轮次的状态变化可以写成：
 
@@ -204,14 +204,14 @@ Prefill 完成后，大部分前缀被转换为 $C_U,C_L$，最近至少 $G$ 个
 4. commit
    提交接受 token 与修正/额外输出；后者的 KV 留待下一次 forward 计算
 
-5. F2 接近容量边界时
-   quantize(F1) -> append to upper/lower cache
-   move confirmed part of F2 -> F1
+5. F2 接近容量边界时，先等待验证/回滚
+   若 F2 已有 G 个有效、已确认 KV，才 quantize(F1) 并轮换
+   否则保留 F1，继续填充 F2；不能把未确认候选当作已满的一组
 ```
 
-因为未确定状态只存在 full-precision $C_{F_2}$，回滚是一次按逻辑长度截断，不需要修改已经打包的量化历史。量化也从“每个 decode step”摊销为“大约每 $G$ 个已确认 token 一次”。
+这里将论文的双 buffer 思路展开为带边界检查的实现示意：draft 长度还要受剩余暂存空间限制，不能越过 $2G$ 的物理容量。因为未确定状态只存在 full-precision $C_{F_2}$，回滚是一次按逻辑长度截断，不需要修改已经打包的量化历史。量化也从“每个 decode step”摊销为“大约每 $G$ 个已确认 token 一次”。
 
-至少 $G$ 个最近 token 保持 full precision，还减小了草稿与目标在局部上下文上的差异。对自然语言生成而言，近期 token 往往对下一 token 有很强影响；但应把它视为论文设计与实验观察，而不是所有任务中“远端 KV 都不重要”的结论，因为远端 token 仍被保留在量化 cache 中。
+当有效前缀不少于 $G$ 时，至少 $G$ 个最近 token 保持 full precision，还减小了草稿与目标在局部上下文上的差异。对自然语言生成而言，近期 token 往往对下一 token 有很强影响；但应把它视为论文设计与实验观察，而不是所有任务中“远端 KV 都不重要”的结论，因为远端 token 仍被保留在量化 cache 中。
 
 ## 一轮 QuantSpec 的完整流程
 
@@ -219,7 +219,7 @@ Prefill 完成后，大部分前缀被转换为 $C_U,C_L$，最近至少 $G$ 个
 
 ### 1. Prefill
 
-目标模型处理完整 prompt，生成初始 KV。除 recent buffer 外的前缀被量化为 upper/lower 两个 INT4 位平面，最近 $G$ 至 $2G$ 个条目保留 full precision。
+目标模型处理完整 prompt，生成初始 KV。除 recent buffer 外的前缀被量化为 upper/lower 两个 INT4 位平面；长前缀的最近 $G$ 至 $2G$ 个条目保留 full precision，不足 $G$ 时保留实际全部条目。
 
 ### 2. Draft
 
@@ -327,7 +327,7 @@ QuantSpec 的消融提供了一个比“量化总能加速”更细的结论：
 - 客户端取消发生在 draft 与 verify 之间；
 - batch 中不同请求接受长度不同。
 
-每轮之后，都应比较“增量 cache 继续生成”与“从已确认 token 重新 prefill”的 logits。二者不一致，通常意味着长度、position id 或回滚边界出错。
+每轮之后，用相同的已确认 token、target 精度、量化分组和近期 buffer 轮换历史构造参考路径，再比较后续 logits。容差应包含已知的浮点与量化误差。单纯把已确认文本重新做一次全精度 prefill 并不是严格等价的 cache reference：它可能改变历史分组、量化时机和层间激活，正常量化误差也会造成差异。与全精度重算的差异适合衡量质量；在**相同缓存数值契约**下的异常差异，才用于定位位置、回滚或 stale KV 错误。[论文 §4.2–4.3](https://arxiv.org/html/2502.10424#S4.SS2)明确区分了 INT8 历史区与全精度近期区。
 
 ### 阶段五：端到端服务评测
 

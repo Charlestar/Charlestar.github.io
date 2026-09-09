@@ -124,6 +124,8 @@ $$
 O=\operatorname{diag}(\ell)^{-1}\widetilde O
 $$
 
+这些式子对每一行独立应用，初始化为 $m=-\infty,\ell=0,\widetilde O=0$。若当前 tile 中某行没有任何有效 key，应直接保持该行状态，不计算 $-\infty-(-\infty)$；否则空行会产生 NaN。首个非空 tile 到来时，旧状态的缩放系数取 0。遍历结束仍为空的行不能执行除以 0，应按 API 约定处理；[FlashAttention README 的 causal 对齐说明](https://github.com/Dao-AILab/flash-attention#21-change-behavior-of-causal-flag)规定全 mask 行输出为 0。重建 $P$ 与 backward 也要遮蔽这种行，不能直接套用空行的 $S-L$。
+
 这不是省掉数值稳定性。最大值变化时，旧累积仍乘 $e^{m^{old}-m^{new}}$；只是把不必每轮进行的除法/缩放推迟到最后。
 
 另一个细节是反向传播不必同时保存 row max $m$ 和指数和 $\ell$，只保存：
@@ -156,7 +158,7 @@ $$
 Q rows
   |
   v
-  [算][跳][跳][跳]
+  [边][跳][跳][跳]
   [算][边][跳][跳]
   [算][算][边][跳]
   [算][算][算][边] -> K columns

@@ -3,7 +3,7 @@ layout: post
 title: "推理模型的推测解码：Thinking Budget 与 EAGLE-3"
 subtitle: "把生成工作量与执行效率分开优化"
 date: 2026-05-15 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -171,7 +171,7 @@ EAGLE-3 的 training-time test 在训练中模拟 drafter 的测试时自回归�
 每个节点表示一个候选 token，根到节点是一段完整前缀。runtime 需要：
 
 1. 给节点分配 position；
-2. 构造 tree attention mask，节点只能看到自己的祖先；
+2. 构造 tree attention mask，节点可见共享的正式前缀、自己的祖先以及自身，不能看到兄弟分支或后代；
 3. 将多个节点组织进一次目标 forward；
 4. 按目标概率与采样规则确定被接受路径；
 5. 只提交路径上的 KV，释放其他分支。

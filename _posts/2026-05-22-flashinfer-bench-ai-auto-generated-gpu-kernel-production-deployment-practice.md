@@ -3,7 +3,7 @@ layout: post
 title: "FlashInfer-Bench：AI 生成 GPU Kernel 的评测与上线边界"
 subtitle: "从算子契约、真实 Workload 到运行时替换"
 date: 2026-05-22 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -67,7 +67,7 @@ Definition 描述：
 - 运算语义和正确但不必很快的 reference；
 - op type、标签和说明。
 
-系统用一条严格规则判断两个调用能否属于同一 Definition：axes 集合相同、每个 axis 的 const/var 角色相同、所有 const axis 的值相同。
+同一 Definition 下，axes 集合、每个 axis 的 const/var 角色和所有 const axis 的值必须一致；这只是维度契约，不是判定 kernel 语义相同的充分条件。输入/输出 dtype 与格式、约束，以及 reference 定义的数学运算也必须相同。例如同形状的相加与相乘不能因为 axes 一致就合并成同一算子。[官方 Definition schema](https://bench.flashinfer.ai/docs/flashinfer-trace/definition)同时记录这些信息。
 
 例如 `head_dim=128` 若被视为常量，就已经成为 kernel 身份的一部分；`batch_size` 若为变量，则由每个 workload 实例给出。
 

@@ -60,17 +60,19 @@ next decode round : 20 ms
 
 一种直觉是：既然 prefill 影响生成，就等所有 decode 结束后再做 prefill。但在线服务通常不会出现整齐的空档。
 
-只要请求持续到达，系统中就可能一直存在 running decode：
+先看严格的“没有 decode 才执行 prefill”规则：
 
 ```text
 t0: A、B 开始 decode
 t1: C 等待 prefill
 t2: D 到达，A、B 仍在 decode
-t3: E 到达，B、D 仍在 decode
+t3: E 到达，B 仍在 decode；C、D、E 都在等待 prefill
 ...
 ```
 
-若规则是“没有 decode 才执行 prefill”，C 可能无限等待。反过来，若每个新请求都立即完整 prefill，已有请求的 TPOT 会随到达流量剧烈抖动。
+如果 A、B 的输出长度都有有限上限，且没有外部 decode 请求加入，它们最终会结束；仅有新的原始请求不断到达，并不能让这个 decode 集合永远不清空。因此这里准确的问题是：C 的首 token 要等待现有最长生成完成，等待可能很长，但不能仅据此声称无限饥饿。
+
+更一般的 decode-first 策略会利用剩余预算接纳部分 prefill，或从独立 prefill 池接收已就绪请求；此时 decode 集合可以不断补充。若某个长 prompt 始终拿不到正的可执行 chunk，才可能产生持续饥饿。反过来，每个新请求都立即完整 prefill，又会让已有请求的 TPOT 随到达流量剧烈抖动。
 
 更重要的是，decode-only batch 不一定高效。每条请求只提供一个新 token，batch 较小时无法形成足够大的矩阵乘法；模型权重仍要从显存读取，算力却可能没有吃满。Prefill 有大量并行 token，恰好可以提高本轮 arithmetic intensity。
 
@@ -202,6 +204,8 @@ $$
 - $B_{token}$ 是一轮 token budget；
 - $D_t$ 是本轮 decode 或其他运行请求占用的 token 数。
 
+这里 $D_t$ 指已经获准调度的工作，满足 $0\le D_t\le B_{token}$，不是所有 decode 请求的总需求；当需求超过预算时，需要先选择子集。剩余预算为零则本轮不产生 prefill chunk。对后面的 $\lceil L_p/C\rceil$ 估算则要求固定 $C>0$。
+
 这种方式适应性更强，但每轮执行时间会随 $D_t$ 和上下文分布变化。为了避免单条长 prompt 吞掉几乎全部预算，还可以增加 per-request threshold 或限制同时进行的 partial prefills 数量。
 
 两种方式都属于 chunked prefill。前者强调规则形状和 stall-free batch，后者强调统一 token 调度下的容量填充，不能只看到配置名就假定实现完全相同。
@@ -210,7 +214,7 @@ $$
 
 vLLM V1 的统一 scheduler 不必维护互斥的“prefill 请求类型”和“decode 请求类型”。它更关注两个进度：
 
-- `num_computed_tokens`：模型已经实际计算到哪里；
+- `num_computed_tokens`：调度器记录的输入计算进度，也可能包含提前记账的在途工作；
 - `num_tokens_with_spec`：prompt、已生成 token 和当前 speculative tokens 一共要求计算到哪里。
 
 待完成工作近似为：
@@ -220,6 +224,8 @@ num\_new\_tokens
 = num\_tokens\_with\_spec
 - num\_computed\_tokens
 $$
+
+这个简式省略了异步 output placeholders 等附加项；它不能单独证明 KV 已经在 GPU 完成写入。当前源码的 `_update_after_schedule` 会先推进调度计数，`update_from_output` 再处理拒绝或失败，worker 仍必须遵守 GPU 数据依赖。
 
 对于新 prompt，这个差值可能是数千；对于普通 decode，通常是 1。Scheduler 在全局 `max_num_scheduled_tokens` 内给每个 request 分配本轮 token 数：
 

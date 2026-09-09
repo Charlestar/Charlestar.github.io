@@ -239,11 +239,14 @@ O   = O + P_j V_j
 同一 $j$ 内存在严格依赖。但对相邻 block，可以在寄存器中保存额外 state，形成两级流水：
 
 ```text
-WGMMA:     QK_j -------- PV_j -------- QK_{j+1} -------- PV_{j+1}
-scalar:             softmax_j ---------------- softmax_{j+1}
+已就绪：S_j、P_j
+发起 QK_(j+1)（异步）并发起 PV_j（异步）
+等待 QK_(j+1) -> 得到 S_(j+1)
+计算 softmax_(j+1) 与新行统计，此时 PV_j 可以仍在执行
+等待 PV_j -> 按新行最大值 rescale O -> 进入下一组工作
 ```
 
-更准确地说，FA3 让某些下一迭代的异步 WGMMA 在当前迭代 Softmax 指令周围发射，并在真正读取结果时才 wait。它需要额外 register buffers 保存处于不同 pipeline stage 的 score/probability fragments。
+这对应论文 §3.2 的两级流水：用当前块的 $PV_j$ 与下一块的 Softmax 重叠，不是在 $QK_j$ 尚未完成时提前读取它做 Softmax。示意省略首块初始化与末块排空，也不表示同一 Tensor Core 可以无资源限制地并行两次 GEMM。它需要额外 register buffers 保存处于不同 pipeline stage 的 score/probability fragments。
 
 重排必须遵守 online Softmax 的全局状态：新 block 若改变 row max，旧 output accumulator 需要正确 rescale。可以延迟某些更新，却不能让依赖未来 $m$ 的计算使用旧 scale。
 
@@ -300,6 +303,8 @@ $$
 $$
 O=\widetilde O_T/\ell_T
 $$
+
+这里按行初始化 $m_0=-\infty,\ell_0=0,\widetilde O_0=0$，scores 已包含所需的 attention scale 与 mask。全 mask 的 tile 行应直接跳过统计更新，首个有效 tile 的旧状态缩放系数取 0；若全局仍为空行，按接口约定处理零输出而不执行 $0/0$。否则 $-\infty-(-\infty)$ 会污染异步流水中的状态。计算可以跳过，但相应 TMA/WGMMA buffer 的等待、释放与 barrier phase 仍须配对，不能把数值空行等同于取消其他线程需要的同步。
 
 FP16/BF16 路径仍保留 FP32 的 Softmax rescaling 和累积关键状态，因此论文中的 FP16 FA3 与 FA2 具有相同量级数值误差，并优于把更多中间结果保存在低精度的朴素实现。
 
@@ -390,7 +395,7 @@ Q'K'^T
 =QK^T
 $$
 
-精确实数运算下 attention scores 完全不变。变化发生在量化前的数值分布：一个 channel 上的尖锐 outlier 被正交变换扩散到多个维度，最大绝对值下降，FP8 的有限 code points 分配得更均匀。
+精确实数运算下 attention scores 完全不变。变化发生在量化前的数值分布：随机正交混合旨在把尖锐 outlier 扩散到多个维度，使典型输入的最大幅度降低、FP8 表示利用更均衡；它并不保证对每一个输入向量都降低最大绝对值。
 
 论文选择随机 ±1 对角矩阵与 Hadamard matrix 的组合，使变换可在：
 
@@ -398,7 +403,7 @@ $$
 O(d\log d)
 $$
 
-完成，而不是普通 dense orthogonal matrix 的 $O(d^2)$。它也可以与 RoPE 等前置操作融合。
+完成，而不是普通 dense orthogonal matrix 的 $O(d^2)$。这里必须使用归一化 Hadamard 变换，使 $MM^T=I$；常规快速 Hadamard 算法要求维度为 2 的幂，其他维度要明确分块或 padding 方案。它也可以与 RoPE 等前置操作融合，但必须保留变换顺序与 attention scale。
 
 “Incoherent” 不是把 attention 随机化，也不是近似丢弃信息；正交变换成对作用于 Q/K，score 在量化前保持不变，目的是改变坐标系，让量化误差不被少数坐标支配。
 

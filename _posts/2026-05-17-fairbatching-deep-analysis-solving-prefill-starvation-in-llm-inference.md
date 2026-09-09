@@ -3,7 +3,7 @@ layout: post
 title: "FairBatching：面向 LLM 推理的公平批次形成"
 subtitle: "从延迟契约、进度余量到 Prefill Admission Budget"
 date: 2026-05-17 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -172,7 +172,7 @@ init\_time\_budget =
 \right)
 $$
 
-第一项保证批次执行时间不会轻易跨过最紧迫 decode 请求的 deadline。第二项给预算设置一个下限，避免 decode 突发时最小 slack 过小，导致批次被切得极碎、GPU 利用率和调度开销急剧恶化。
+第一项让预算感知最紧迫 decode 的剩余 slack，第二项则给预算设置下限，避免批次被切得极碎。因为二者取的是 **max**，这并不是硬 deadline 保证：若最小 slack 为 10 ms、最小 TPOT SLO 为 50 ms，预算仍为 50 ms，已经超过前者。论文在这里权衡 SLO 紧迫度与有效执行粒度；执行时间预测误差还会带来额外违约风险。
 
 这不是一个固定的 prefill 比例：
 
@@ -194,18 +194,23 @@ FairBatching 把候选工作分成三组：
 
 ```python
 def form_batch(running_decodes, waiting_prefills, capacity):
+    if not running_decodes:
+        return form_prefill_only_batch(waiting_prefills, capacity)
+
+    step_now = now()
+    slack = lambda req: req.next_deadline - step_now
     min_tpot = min(req.tpot_slo for req in running_decodes)
-    min_slack = min(req.next_deadline - now() for req in running_decodes)
+    min_slack = min(slack(req) for req in running_decodes)
     time_budget = max(min_slack, min_tpot)
 
     urgent, non_urgent = partition(
         running_decodes,
-        lambda req: req.slack < time_budget + min_tpot,
+        lambda req: slack(req) < time_budget + min_tpot,
     )
 
-    urgent.sort(key=lambda req: req.slack)
-    waiting_prefills.sort(key=lambda req: req.slack)
-    non_urgent.sort(key=lambda req: req.slack)
+    urgent = sorted(urgent, key=slack)
+    waiting_prefills = sorted(waiting_prefills, key=slack)
+    non_urgent = sorted(non_urgent, key=slack)
 
     batch = []
     for group in (urgent, waiting_prefills, non_urgent):
@@ -217,6 +222,8 @@ def form_batch(running_decodes, waiting_prefills, capacity):
 
     return batch
 ```
+
+这里为 prefill 设置的 `next_deadline` 是首 token deadline，为 decode 设置的则是下一输出 token deadline；所有 slack 都使用同一份 `step_now`。`form_prefill_only_batch` 是教学占位函数：在没有 decode 时，按 prefill 的 deadline、chunk 和容量约束形成批次，队列为空返回空批次，不能对空 decode 集合求最小值。它不是论文或 vLLM 的公开函数。
 
 真实实现不会如此简短。它还需要处理 chunk 大小、KV block 分配、抢占、已计算 token 数、并行 worker 同步和空批次等边界。这里最重要的是三段顺序背后的含义：
 

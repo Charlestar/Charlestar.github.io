@@ -243,25 +243,32 @@ WAITING ------> RUNNING ------> FINISHED
 ```python
 def schedule(running, waiting, token_budget, max_seqs):
     batch = []
+    seq_budget = max_seqs
 
     for req in choose_running_requests(running):
+        if token_budget <= 0 or seq_budget <= 0:
+            break
         work = next_token_work(req)
-        if fits(work, token_budget, max_seqs) and has_kv_capacity(req, work):
+        if 0 < work.num_tokens <= token_budget and has_kv_capacity(req, work):
             reserve(req, work)
             batch.append(work)
             token_budget -= work.num_tokens
+            seq_budget -= 1
 
     for req in choose_waiting_requests(waiting):
+        if token_budget <= 0 or seq_budget <= 0:
+            break
         work = next_prefill_work(req, token_budget)
-        if fits(work, token_budget, max_seqs) and has_kv_capacity(req, work):
+        if 0 < work.num_tokens <= token_budget and has_kv_capacity(req, work):
             reserve(req, work)
             batch.append(work)
             token_budget -= work.num_tokens
+            seq_budget -= 1
 
     return batch
 ```
 
-真实调度器还要考虑 prefix cache、encoder input、LoRA、推测 token、pipeline parallel、优先级和抢占，但约束可以归纳为三种。
+这里假设每个 request 只有一条序列，两个候选集合不重叠，`reserve` 成功后立即更新本轮资源账本；多分支请求应按实际占用序列数扣减。序列预算与 token 预算必须同时消耗，不能每次只检查未变化的 `max_seqs`。真实调度器还要考虑 prefix cache、encoder input、LoRA、推测 token、pipeline parallel、优先级和抢占，但约束可以归纳为三种。
 
 ### 序列数量约束
 
@@ -502,8 +509,8 @@ arrival
 -> admitted
 -> first scheduled
 -> prefill finished
--> each decode scheduled
 -> first token emitted
+-> repeated: decode scheduled -> decode finished -> next token emitted
 -> finished / cancelled
 ```
 

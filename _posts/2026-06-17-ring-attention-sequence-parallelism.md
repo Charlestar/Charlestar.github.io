@@ -122,15 +122,17 @@ kv = local_kv
 state = empty_online_softmax_state(local_q)
 
 for step in range(world_size):
-    next_kv = async_send_recv(kv)
-    partial = block_attention(local_q, kv, mask_for(step))
+    next_kv = async_send_recv(kv) if step + 1 < world_size else None
+    kv_owner = (rank - step) % world_size
+    partial = block_attention(local_q, kv, mask_for(rank, kv_owner))
     state = merge_online_softmax(state, partial)
-    kv = wait(next_kv)
+    if next_kv is not None:
+        kv = wait(next_kv)
 
 local_output = finalize(state)
 ```
 
-关键不在 Python 循环，而在 `async_send_recv` 与 `block_attention` 是否能真正并发，以及 `merge_online_softmax` 是否保持全局 Softmax 的数值语义。
+这是省略了具体通信 API 的教学版本：$P$ 次 block 计算只需 $P-1$ 次传输，最后一轮无需再把已见过的 K/V 绕回来；$P=1$ 时不通信。这里的 owner 公式对应前述环方向，mask 使用全局 Q/K 位置，而不是把 step 当作位置。关键不在 Python 循环，而在 `async_send_recv` 与 `block_attention` 是否能真正并发，以及 `merge_online_softmax` 是否保持全局 Softmax 的数值语义。
 
 ## 局部 Softmax 为什么不能直接相加
 
@@ -177,6 +179,8 @@ $$
 $$
 O=\frac{\widetilde O}{\ell}
 $$
+
+初始状态为 $m=-\infty,\ell=0,\widetilde O=0$。全 mask 的局部行必须返回“无贡献”状态，并在 merge 中直接跳过；两个空状态不能通过 $e^{-\infty-(-\infty)}$ 合并。第一个有效块到来时旧状态权重取 0，后续非空块再使用上述递推。全局仍无有效 key 的行，需按接口约定返回零输出或拒绝输入，不能执行 $0/0$。这对 padding、分段文档与 causal 的未来 shard 尤其重要。
 
 这与 FlashAttention 跨片上 tiles 合并 Softmax 是同一个代数性质。区别只是边界变了：FlashAttention 的 KV tiles 在单卡 HBM 与 SRAM 间流动，Ring Attention 的 KV blocks 还要跨设备网络流动。
 
@@ -276,12 +280,14 @@ compute stream      : use A -> record done       |
 
 ## 每张卡到底通信多少数据
 
-一个 K/V block 要沿环经过其他设备。每个 step 每张卡发送和接收一块，持续 $P-1$ 次远端轮转。忽略本地第 0 轮，每卡 forward 通信量近似：
+一个 K/V block 要沿环经过其他设备。每次远端轮转每张卡发送和接收一块，共 $P-1$ 次。忽略本地计算、metadata 和 padding，每卡 forward 的**发送量**近似为：
 
 $$
-M_{device}
+M_{send}
 \approx 2(P-1)\frac{N}{P}Hd\cdot bytes
 $$
+
+系数 2 来自 K 与 V，不是同时计算 send 和 recv。均匀环中的接收量相同，即 $M_{recv}=M_{send}$；若监控统计双向总字节，应再相加。此式假设 MHA、batch 为 1，GQA 传输量应改用 KV head 数。
 
 当 $P$ 增大时，$(P-1)/P$ 接近 1，因此每卡总通信量在量级上约为全序列一份 K/V，而不是把完整 K/V 一次性常驻显存。
 
@@ -514,13 +520,13 @@ $$
 \max(3,2)=3\text{ ms}
 $$
 
-8 轮约 24 ms，再加启动、首尾流水和同步成本。若跨节点后传输变成 5 ms：
+这里前 7 次通信各自与当前计算重叠，最后只剩一次计算，理想总时间为 $(P-1)\max(T_{compute},T_{comm})+T_{compute}$。因此本例为 24 ms，再加启动和同步成本。若跨节点后传输变成 5 ms：
 
 $$
 \max(3,5)=5\text{ ms}
 $$
 
-总时间就更接近 40 ms。算法没有变化，拓扑改变已让关键路径从计算受限转为通信受限。
+理想总时间变成 $7\times5+3=38$ ms，再加其他开销，而不是无条件计算 8 次传输。算法没有变化，拓扑改变已让关键路径从计算受限转为通信受限。
 
 这是示意数字，不是特定硬件 benchmark。它说明部署前应先测目标 block size 的 local kernel 时间和真实 P2P 带宽，再判断 overlap 条件是否成立。
 

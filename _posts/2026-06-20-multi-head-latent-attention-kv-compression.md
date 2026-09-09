@@ -3,7 +3,7 @@ layout: post
 title: "MLA：为什么一份 Latent 可以代替多头 KV Cache"
 subtitle: "从联合低秩压缩、矩阵吸收到 Decoupled RoPE 与 FlashMLA 执行模式"
 date: 2026-06-20 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: attention-long-context
@@ -95,7 +95,7 @@ c_t^{KV}=W^{DKV}h_t,
 c_t^{KV}\in\mathbb{R}^{d_c}
 $$
 
-其中 $d_c$ 远小于把所有 heads 的 K/V 展开后的总维度。训练的直接表达中，可以再用两个 up-projections 得到 content Key 与 Value：
+其中 $d_c$ 远小于把所有 heads 的 K/V 展开后的总维度。这是论文用于解释低秩关系的简化记号；实际 checkpoint 可以在 down-projection 后包含 RMSNorm。此时下文的 $c_t^{KV}$ 应指完成该归一化、真正送入 up-projection 并缓存的 latent，不能把归一化当成线性权重吸收掉。训练的直接表达中，可以再用两个 up-projections 得到 content Key 与 Value：
 
 $$
 k_t^C=W^{UK}c_t^{KV}
@@ -259,6 +259,16 @@ q_{t,i}^Tk_{j,i}
 $$
 
 第一项使用前述矩阵吸收，在 latent space 计算；第二项保留 RoPE 的相对位置语义，直接与缓存的小维度 positional Key 计算。
+
+还需要保持原有 Softmax 缩放。设 content Q/K 维度为 $d_h$、RoPE 维度为 $d_R$，未经额外长上下文修正的 MLA score 是：
+
+$$
+s_{t,j,i}=\frac{(\tilde q_{t,i}^C)^Tc_j^{KV}+(q_{t,i}^R)^Tk_j^R}
+{\sqrt{d_h+d_R}},\qquad
+p_{t,j,i}=\operatorname{softmax}_{j\le t}(s_{t,j,i})
+$$
+
+矩阵吸收把 content 点积的执行维度变成了 $d_c$，但**不能把分母改成 $\sqrt{d_c+d_R}$**，否则改变 attention 温度。$W_i^{UK}\in\mathbb R^{d_h\times d_c}$、$\tilde q_{t,i}^C\in\mathbb R^{d_c}$，形状变了但点积值及缩放都应保持。DeepSeek-V2 [附录 C 的公式 (46)](https://arxiv.org/html/2405.04434v5)给出该分母；[DeepSeek 官方推理实现的 `MLA`](https://github.com/deepseek-ai/DeepSeek-V3/blob/main/inference/model.py)让显式与吸收路径共用 `softmax_scale`，并在所需配置下叠加长上下文修正。Query 低秩路径的 RMSNorm 同样必须保留。
 
 所以 MLA 每 token 的核心缓存不是只有 $c_j^{KV}$，而是：
 
