@@ -17,7 +17,7 @@
 
 ## 本地开发
 
-需要 Ruby 3.1+ 与 Bundler。
+需要 Ruby 3.1+ 与 Bundler；运行下方完整检查还需要 Node.js 20+ 和 Python 3.10+。
 
 ```bash
 bundle install
@@ -31,9 +31,14 @@ bundle exec jekyll serve --livereload
 ```bash
 bundle exec jekyll build
 node scripts/audit-posts.mjs
+node scripts/reviews/check-coverage.mjs
+node scripts/reviews/run-examples.mjs
+python scripts/reviews/full-agent-examples.py
 node scripts/validate-site.mjs
 bundle exec ruby scripts/validate-math.rb
 ```
+
+文章审阅记录与可复算反例保存在 `scripts/reviews/`。Python 示例检查仅使用标准库（Python 3.10+）；这些检查验证特定公式、计数和状态反例，不等于真实 GPU 实测或全部内容的正确性证明。覆盖检查固定核对 2026-09-09 的 77 篇审阅记录，后续新增文章会另行提示，不冒充已经审阅。
 
 ## 撰写文章
 

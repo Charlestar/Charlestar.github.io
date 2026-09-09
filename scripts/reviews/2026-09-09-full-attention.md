@@ -9,7 +9,9 @@
 - `node scripts/reviews/full-attention-examples.mjs`：13 组 CPU 参考检查全部通过。包含非空/空行 online softmax、FA2 反向有限差分、MLA 吸收和原始缩放、Ring 计数和时间、单 pivot 分布及有限轮数、DSA ties、序列/token 双预算等。
 - `node scripts/audit-posts.mjs`：77 篇、9 个系列、24 个标签通过元数据、标题、代码/数学定界符、控制字符、本地图片与残留标记检查。
 - 未执行 CUDA kernel、真实模型生成、训练、NCCL/RDMA、Kubernetes、量化校准或性能基准。数值小例不构成生产路径认证。
-- 页面渲染、全站构建与最终提交由主审负责；本分工未提交或推送。
+- 追加构建检查：本机未找到可用 Ruby，按主审安排在忽略目录 `.tmp-jekyll-bundle/runtime-full-audit-2026-09-09` 解压官方 RubyInstaller 3.3.11-1 x64 portable，复用现有 gem cache；Ruby 3.3.11、Bundler 2.5.22、`bundle check` 通过。下载 SHA256 `ee5e71a19bb676302d2d3fb725e2ad3adfee2fdc2f2d64a61830a2d4c0fa9a47` 与官方 release API 匹配。
+- `JEKYLL_ENV=production` 的 Jekyll 构建成功（2.059 s），`validate-site` 通过 90 个 HTML 页面 / 115 个生成文件，`validate-math.rb` 通过 70 篇中的 144 个原生 inline / 776 个 display 公式。产物保留在 `_site`。旧 gem 的 bat launcher 未能解析 `ruby.exe`，实际成功命令使用绝对 Ruby 路径加载 `-rbundler/setup` 后执行既有 Jekyll Ruby 入口；没有改项目配置、依赖锁或 launcher。Scoop config 读取权限提示未影响上述成功检查。
+- 公式检查保证 TeX 从 Kramdown 原生数学节点到生成 HTML 没有丢失或被 Markdown 改写，不证明浏览器排版或公式内容正确，也不涵盖 legacy 单美元定界符。浏览器页面检查与最终提交由主审负责；本分工未提交或推送。
 
 ## 21. EAGLE-3 与 Thinking Budget
 

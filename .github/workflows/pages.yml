@@ -30,10 +30,16 @@ jobs:
         with:
           ruby-version: "3.3"
           bundler-cache: true
+      - name: Set up Python for article example checks
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Audit post content
         run: |
           node scripts/audit-posts.mjs
-          node scripts/reviews/2026-09-09-examples.mjs
+          node scripts/reviews/check-coverage.mjs
+          node scripts/reviews/run-examples.mjs
+          python scripts/reviews/full-agent-examples.py
       - name: Build site
         env:
           JEKYLL_ENV: production
