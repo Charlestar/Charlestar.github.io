@@ -3,7 +3,7 @@ layout: post
 title: "RLHF/GRPO 系统数据流：一次训练迭代里四类模型怎样协作"
 subtitle: "从 Policy Snapshot、Rollout 与 Reward，到 Advantage、参数更新和一致性边界"
 date: 2026-08-18 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-training
@@ -508,27 +508,45 @@ ACTOR_COMMITTED(v)
 
 ## 性能分析先找 Critical Path，再谈 GPU 利用率
 
-一次同步 iteration 的简单延迟模型是：
+对同步执行的训练循环，先按同一测量窗口计算平均每轮延迟。一种阶段串行的近似模型是：
 
 $$
-T_{iter}
+\bar T_{iter}
 \approx
-T_{sync}
-+T_{rollout}
-+T_{prepare}
-+T_{actor\_update}
-+T_{critic\_update}
+\bar T_{sync}
++\bar T_{rollout}
++\bar T_{prepare}
++\bar T_{actor\_update}
++\bar T_{critic\_update}
 +T_{checkpoint,amortized}
 $$
 
-$T_{checkpoint,amortized}$ 是持久化 checkpoint 摊到每轮的平均成本；未触发落盘的 iteration 中该项为 0。若 Reference、Reward 与 Critic Forward 并行，$T_{prepare}$ 更接近它们的最大值加上 join/transfer，而不是简单求和：
+$T_{checkpoint,amortized}$ 是 checkpoint 在该测量窗口内给关键路径增加的时间，再除以 iteration 数。若每 $k$ 轮保存一次，每次保存暴露的额外成本近似为 $C$，则：
 
 $$
-T_{prepare}
-\approx
-\max(T_{ref},T_{reward},T_{value})
-+T_{reshard/join}
+T_{checkpoint,amortized}\approx\frac{C}{k}
 $$
+
+例如每 10 轮增加 100 秒 checkpoint 成本，平均每轮就是 10 秒。这个摊销项不会在“不保存的轮次”变为零；单轮实际耗时需要另一种口径。在同步阻塞保存且成本均为 $C$ 的简化条件下，令 $I_i$ 在第 $i$ 轮保存时为 $1$、否则为 $0$，则：
+
+$$
+T_{iter,i}\approx T_{base,i}+C I_i
+$$
+
+这里 $T_{base,i}$ 是该轮不含保存的阶段成本。未保存轮次的实际增量为零，保存轮次的实际增量为 $C$；先对实际时长取平均后，就不要再加一次 $C/k$。
+
+异步 checkpoint 的 $C$ 应只计入暴露在训练关键路径上的增量，例如 snapshot/staging、资源争用和等待未完成保存的 backpressure，不能直接取整个后台写盘时长。PyTorch 的 [DCP 异步保存教程](https://docs.pytorch.org/tutorials/recipes/distributed_async_checkpoint_recipe.html) 分别讨论了 staging 和后台写盘，并展示了等待前一保存任务完成再发起下一次保存的做法。若影响跨越多轮，应在覆盖完整保存周期的窗口内统计总增量再摊销，而不要强行把全部影响归给触发保存的那一轮。
+
+阶段本身的重叠也必须按依赖关系建模。若 Reference、Reward 与 Critic Forward 并行，第 $i$ 轮的 $T_{prepare,i}$ 更接近各分支的最大值加上 join/transfer，而不是简单求和：
+
+$$
+T_{prepare,i}
+\approx
+\max(T_{ref,i},T_{reward,i},T_{value,i})
++T_{reshard/join,i}
+$$
+
+平均准备时间应对这些逐轮关键路径取平均；一般不能把它替换成三个分支平均耗时的最大值。
 
 Colocation 会让多个阶段串行，从而降低峰值显存但延长 critical path；Standalone 能 overlap，却可能让 Actor 等待最后一条长 rollout 或慢 reward。单看平均 GPU utilization 会掩盖这种依赖：一组 GPU 100% 忙于生成，并不说明 Actor training 没在空等。
 
@@ -672,6 +690,7 @@ RLHF/GRPO 的困难不只是“显存里同时放几张大模型”，而是要�
 - [HybridFlow: A Flexible and Efficient RLHF Framework](https://arxiv.org/abs/2409.19256)
 - [DeepSpeed-Chat: Easy, Fast and Affordable RLHF Training of ChatGPT-like Models at All Scales](https://arxiv.org/abs/2308.01320)
 - [OpenRLHF: An Easy-to-use, Scalable and High-performance RLHF Framework](https://arxiv.org/abs/2405.11143)
+- [PyTorch: Asynchronous Saving with Distributed Checkpoint](https://docs.pytorch.org/tutorials/recipes/distributed_async_checkpoint_recipe.html)
 - [verl：PPO Example Architecture](https://verl.readthedocs.io/en/latest/examples/ppo_code_architecture.html)
 - [verl：HybridFlow Programming Guide](https://verl.readthedocs.io/en/latest/hybrid_flow.html)
 - [verl：Engine Workers](https://verl.readthedocs.io/en/latest/workers/engine_workers.html)

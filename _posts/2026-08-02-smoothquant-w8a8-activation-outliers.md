@@ -3,7 +3,7 @@ layout: post
 title: "SmoothQuant：把 Activation Outlier 迁移到 Weight"
 subtitle: "从等价通道缩放到 W8A8 INT8 GEMM、Q/DQ 融合与 Serving 收益"
 date: 2026-08-02 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -120,11 +120,21 @@ s_j=
 {\max(|W_j|)^{1-\alpha}}
 $$
 
-其中 $\alpha\in[0,1]$ 控制把多少量化难度迁往 weight：
+其中 $\alpha\in[0,1]$ 控制 activation 与 weight 之间的量化难度分配。令 $a_j=\max|X_j|>0$、$b_j=\max|W_j|>0$，变换后的对应通道最大幅度为：
 
-- $\alpha$ 较大时，activation outlier 被压得更多，weight 通道被放得更大；
-- $\alpha$ 较小时，activation 改变更温和，weight 分布也更接近原状；
-- 合适的 $\alpha$ 取决于模型、模块、量化粒度和目标 kernel，不应机械地固定为一个值。
+$$
+s_j=\frac{(a_jb_j)^\alpha}{b_j},\qquad
+a'_j=\frac{a_j}{s_j}=(a_jb_j)^{1-\alpha},\qquad
+b'_j=b_js_j=(a_jb_j)^\alpha
+$$
+
+这给出三个直观的端点与中点：
+
+- $\alpha=0$ 时，$s_j=1/b_j$，weight 对应输入通道的最大幅度归一到 $1$，activation 接下 $a_jb_j$ 的通道间差异；这通常不是保持原始 weight 不变。
+- $\alpha=1$ 时，$s_j=a_j$，activation 通道的最大幅度归一到 $1$，weight 接下这些差异。
+- $\alpha=0.5$ 时，两边的最大幅度均为 $\sqrt{a_jb_j}$。它平衡了这两个范围统计，但不保证真实量化误差或任务质量达到最优。
+
+因此，[原论文第 4 节](https://arxiv.org/abs/2211.10438) 所说的迁移强度，应理解为跨通道量化难度的分配，不能解释为每个通道都随 $\alpha$ 增大而绝对放大。由 $\partial s_j/\partial\alpha=s_j\ln(a_jb_j)$ 可知，只有 $a_jb_j>1$ 时 $s_j$ 才随 $\alpha$ 增大；若 $a_jb_j<1$，方向相反。例如 $a_j=64$、$b_j=0.01$ 时，$\alpha=0,0.5,1$ 对应 $s_j=100,80,64$。合适的 $\alpha$ 仍取决于模型、模块、量化粒度和目标 kernel。
 
 假设某通道的 activation 最大幅度为 64，weight 最大幅度为 1，且 $\alpha=0.5$：
 
@@ -132,7 +142,7 @@ $$
 s_j=\frac{64^{0.5}}{1^{0.5}}=8
 $$
 
-activation 最大幅度从 64 降到 8，weight 最大幅度从 1 增到 8。乘积没变，两侧的范围却更均衡。
+在这组 $a_jb_j>1$ 的数值下，activation 最大幅度从 64 降到 8，weight 最大幅度从 1 增到 8。乘积没变，两侧的范围却更均衡。
 
 实际实现还会处理极小统计值、epsilon、clamp、不同模块的 alpha 和 scale folding。公式说明的是核心机制，不等于所有 backend 的 artifact 格式完全相同。
 

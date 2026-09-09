@@ -3,7 +3,7 @@ layout: post
 title: "Collective Communication：AllReduce、AllGather、ReduceScatter 与 All-to-All"
 subtitle: "从 Tensor 所有权和通信量出发，理解分布式训练中的数据重排"
 date: 2026-08-20 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-training
@@ -665,22 +665,24 @@ $$
 
 ## 性能诊断第三步：看 Timeline 中的等待而不只是 Kernel 时长
 
-某个 NCCL kernel 持续 5 ms，不代表网络独自用了 5 ms。它可能包含：
+Profiler 显示某个 NCCL GPU kernel 持续 5 ms，不代表网络独自用了 5 ms。这段执行时间可以包含设备端等待远端 rank/proxy 的进度、链路或 NIC 争用、传输和 reduction。但本地上游 stream-event 依赖以及 kernel 完成后的下游空洞，需要在各自的时间区间分析。
 
-- 等待最慢 rank 到达；
-- 等待上游 compute stream 事件；
-- 等待同一 NIC 上的另一 communicator；
-- 实际传输与 reduction；
-- 下游因错误同步而暴露出来的空洞。
+以通过 `cudaStreamWaitEvent` 建立 compute → communication 依赖的常见路径为例，上游 event 捕获的工作完成后，后续 NCCL kernel 才能开始执行。这个本地等待位于 kernel 启动之前；它不会因为发生在同一条 communication stream 上，就被计入 kernel 的 start/end 之间。[CUDA Runtime API](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__STREAM.html)
 
-可把 collective 的可见代价拆成：
+先确认时间线统计的是哪一种时长：
 
-$$
-T_{visible}
-=T_{queue}+T_{straggler}+T_{transfer}-T_{overlap}
-$$
+| 区间 | 起止边界 | 主要用来排查 |
+| --- | --- | --- |
+| CUDA API time | CPU launch API 开始到返回 | Host 端发起成本、API 内阻塞 |
+| Queue time | Launch API 返回到 GPU kernel 开始，工具只报告正值 | 已排队工作、依赖和资源调度 |
+| GPU kernel time | GPU kernel 开始到结束 | 设备端等待、争用、传输与归约 |
+| 下游暴露等待 | Consumer 已需结果，到它能够继续的区间 | 通信是否位于训练关键路径、是否存在多余同步 |
 
-其中不是严格相加的独立量，但有助于形成诊断顺序。若所有 ranks 的通信 kernel 都晚启动，先查 producer/bucket readiness；若早到 ranks 长时间等待一个 rank，查 compute、dataloader、expert imbalance 或 GPU throttle；若大家同时开始且都慢，再查 topology、contention 与 protocol。
+这些是 [Nsight Systems](https://docs.nvidia.com/nsight-systems/AnalysisGuide/index.html) 中 API、Queue、Kernel 指标与应用依赖的不同边界。Kernel 可能在 CPU API 返回前开始，因此前三项也不能在所有情况下直接相加。Queue time 长也不必然代表性能差：GPU 可能正在执行其他有效工作。
+
+对单个 kernel，$T_{kernel}=t_{kernel,end}-t_{kernel,start}$；对一次可能包含多个 kernel 的 collective，若关心从用户代码发起到 GPU 结果完成的延迟，应另用 $T_{call\to done}=t_{collective,done}-t_{call,start}$。训练真正付出的额外代价还取决于结果何时被消费以及其他计算的重叠，不能从 kernel 时长直接减一个笼统的 overlap 数字得到；重叠执行还可能因资源争用改变 kernel 本身的时长。
+
+若所有 ranks 的通信 kernel 都晚启动，先查 producer/bucket readiness 和启动前的依赖；若早到 ranks 的 kernel 已开始，却长时间等待一个 rank，查 compute、dataloader、expert imbalance 或 GPU throttle；若大家同时开始且都慢，再查 topology、contention 与 protocol。下游出现空洞时，再沿 consumer 的事件依赖确认是谁延长了关键路径。
 
 ## 性能诊断第四步：做分层对照实验
 
@@ -803,6 +805,8 @@ Collective 的抽象到这里已经足够支撑后续三层内容：
 - [NVIDIA NCCL User Guide: Creating and Managing Communicators](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/communicators.html)
 - [NVIDIA NCCL User Guide: Group Calls](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/groups.html)
 - [NVIDIA NCCL User Guide: In-place Operations](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/inplace.html)
+- [NVIDIA CUDA Runtime API: Stream Management](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__STREAM.html)
+- [NVIDIA Nsight Systems: CUDA Kernel Launch & Exec Time Trace](https://docs.nvidia.com/nsight-systems/AnalysisGuide/index.html)
 - [NVIDIA Technical Blog: Understanding NCCL Tuning to Accelerate GPU-to-GPU Communication](https://developer.nvidia.com/blog/understanding-nccl-tuning-to-accelerate-gpu-to-gpu-communication/)
 - [MPI Forum: MPI 4.1 Collective Communication](https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node114.htm)
 - [MPI Forum: Collective Communication Correctness](https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node172.htm)

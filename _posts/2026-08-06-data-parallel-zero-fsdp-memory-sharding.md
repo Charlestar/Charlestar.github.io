@@ -3,7 +3,7 @@ layout: post
 title: "从 Data Parallel 到 ZeRO/FSDP：训练显存到底怎样被切开"
 subtitle: "逐项计算参数、梯度、Optimizer State、Activation 与 Collective 的生命周期"
 date: 2026-08-06 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-training
@@ -454,9 +454,22 @@ gradient reduction dtype
 optimizer/master dtype
 ```
 
-还可能有 attention/GEMM accumulator、loss scalar 和 gradient norm dtype。FSDP mixed-precision policy 会决定参数在 all-gather 后转换成什么 dtype、gradients 用什么 dtype ReduceScatter、optimizer 是否保留低精度 grads。
+还可能有 attention/GEMM accumulator、loss scalar 和 gradient norm dtype。参数通信精度与参数持久保存精度必须分开记录。以 PyTorch FSDP2 的 `MixedPrecisionPolicy` 为例，`param_dtype` 同时决定参数 AllGather 与聚合后参数供前后向计算使用的 dtype；`reduce_dtype` 决定梯度 ReduceScatter/AllReduce 的 dtype。Optimizer 使用原始 dtype 的参数分片，不能仅根据 compute dtype 推断其参数、梯度和状态的精度。[PyTorch FSDP2 文档](https://docs.pytorch.org/docs/main/distributed.fsdp.fully_shard.html#torch.distributed.fsdp.MixedPrecisionPolicy)
 
-通信 dtype 更低可以减少 bytes，却改变 rounding 与 overflow；参数 shard 若以 FP32 保存、计算前再转 BF16，稳态内存也不同。Manifest 与实验报告应逐项记录，而不是只写 `bf16: true`。
+例如，原始参数为 FP32、`param_dtype=BF16` 时，普通参数路径是：
+
+```text
+original FP32 parameter shard ───────────→ optimizer 更新的持久分片
+               │
+               └→ 本地转换为 BF16 shard
+                    → BF16 AllGather
+                    → 完整 BF16 parameter 供 forward/backward
+                    → 按 reshard 策略释放完整参数
+```
+
+转换发生在 AllGather 输入准备阶段，通信消费的是低精度分片。若某个 FSDP group 的完整参数含 $P_g$ 个元素，忽略 padding 后，BF16 的完整 AllGather payload 是 $2P_g$ bytes，FP32 则是 $4P_g$ bytes；采用环式 AllGather、均匀分到 $n$ 个 ranks 时，每 rank 发送量约为 $(n-1)/n$ 倍该 payload。这些数值不包含协议开销，也不等于峰值显存：原始 FP32 shard、低精度暂存、聚合 buffer 和预取中的其他 group 可能同时存活。
+
+通信 dtype 更低可以减少 bytes，却改变 rounding 与 overflow。梯度归约精度、归约后梯度是否再转换、buffer 策略和 optimizer state dtype，应按使用的 FSDP1/FSDP2 或 ZeRO 版本分别核实；Manifest 与实验报告应逐项记录，而不是只写 `bf16: true`。
 
 ## Checkpoint 不能假设每个 Rank 都有完整模型
 
