@@ -3,7 +3,7 @@ layout: post
 title: "GPU 互联拓扑：数据怎样从 HBM 走到另一张 GPU 与远端 NIC"
 subtitle: "从板内互联、PCIe 层级到跨节点 RDMA，建立可验证的数据路径模型"
 date: 2026-08-25 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-training
@@ -38,7 +38,7 @@ tags: [分布式训练, GPU优化]
 
 ### 顶点不只是 GPU
 
-可以把一台训练节点抽象成有向多重图 \(G=(V,E)\)。顶点至少包括：
+可以把一台训练节点抽象成有向多重图 $$G=(V,E)$$。顶点至少包括：
 
 - GPU 及其 HBM；
 - GPU 上可发起或接收传输的执行/复制资源；
@@ -50,7 +50,7 @@ tags: [分布式训练, GPU优化]
 
 同一对顶点之间可以有多条物理链路，同一条端到端路径也可能经过多种协议。NVLink 是 GPU 互联；PCIe 是 I/O fabric；InfiniBand 与 RoCE 则把流量带出主机。把它们统称为“总线”会掩盖路由、隔离域和完成语义的差异。
 
-边 \(e\in E\) 不应只有一个“带宽”属性，至少还要记录：
+边 $$e\in E$$ 不应只有一个“带宽”属性，至少还要记录：
 
 ```text
 capacity(e)       链路在指定方向、指定口径下的容量
@@ -65,7 +65,7 @@ observability(e)  能否从工具看到状态、计数或实际流量
 
 ### Tensor ownership 决定流量方向
 
-路径分析必须带着 tensor ownership。假设 GPU 0 的 HBM 中有 \(D\) 字节，GPU 1 需要一份副本：
+路径分析必须带着 tensor ownership。假设 GPU 0 的 HBM 中有 $$D$$ 字节，GPU 1 需要一份副本：
 
 ```text
 初始：
@@ -137,7 +137,7 @@ $$
 
 ### 路径 A：直连 NVLink
 
-两张 GPU 若由一条或多条 NVLink 直接连接，peer traffic 可以沿这些 GPU 端口移动，而不需要把 payload 绕入 host memory。多条 link 连接同一对 GPU 时，软件和硬件可能把足够大的传输分散到多个 link；但“有 \(k\) 条 link”只说明物理连接关系，并不自动证明某次操作用满 \(k\) 条 link。
+两张 GPU 若由一条或多条 NVLink 直接连接，peer traffic 可以沿这些 GPU 端口移动，而不需要把 payload 绕入 host memory。多条 link 连接同一对 GPU 时，软件和硬件可能把足够大的传输分散到多个 link；但“有 $$k$$ 条 link”只说明物理连接关系，并不自动证明某次操作用满 $$k$$ 条 link。
 
 需要分开看四层：
 
@@ -471,7 +471,7 @@ P_{\text{network}}
 P_{\text{NIC}_d\rightarrow\text{GPU}_d}
 $$
 
-这里的 \(\oplus\) 表示串接而非简单加法。端到端容量近似受最小截面限制，延迟则会叠加固定开销、序列化和排队。两端任何一侧选错 NIC，都可能让网络指标看似正常、GPU buffer 测试却很差。
+这里的 $$\oplus$$ 表示串接而非简单加法。端到端容量近似受最小截面限制，延迟则会叠加固定开销、序列化和排队。两端任何一侧选错 NIC，都可能让网络指标看似正常、GPU buffer 测试却很差。
 
 ## Scale-up 与 Scale-out 是边界模型
 
@@ -544,7 +544,7 @@ $$
 
 ### Bisection bandwidth：把通信端点切成两半的最小截面
 
-对于同时发生的多对通信，单 link 峰值通常不够。前文的 \(V\) 还包括交换机、Root Port 等内部顶点，不能按全部顶点数量机械平分。先定义需要通信的终端集合 \(T\subseteq V\)，例如参与本次 collective 的 GPU 或节点；对任意顶点划分 \(S\subset V\)，只要求两侧终端数量近似相等，内部转发顶点可以落在任一侧。
+对于同时发生的多对通信，单 link 峰值通常不够。前文的 $$V$$ 还包括交换机、Root Port 等内部顶点，不能按全部顶点数量机械平分。先定义需要通信的终端集合 $$T\subseteq V$$，例如参与本次 collective 的 GPU 或节点；对任意顶点划分 $$S\subset V$$，只要求两侧终端数量近似相等，内部转发顶点可以落在任一侧。
 
 对有向、全双工链路，先只计算一个方向的 cut 容量：
 
@@ -554,7 +554,7 @@ C^{\rightarrow}(S,\bar S)
 \sum_{e\in\delta^{+}(S)} C_e
 $$
 
-于是从 \(S\) 侧终端流向另一侧的 bisection bandwidth 可写成：
+于是从 $$S$$ 侧终端流向另一侧的 bisection bandwidth 可写成：
 
 $$
 B_{\text{bisect}}^{\rightarrow}
@@ -563,7 +563,7 @@ B_{\text{bisect}}^{\rightarrow}
 C^{\rightarrow}(S,\bar S)
 $$
 
-反向容量应以 \(C^{\rightarrow}(\bar S,S)\) 单独计算；只有明确报告 `TX+RX aggregate` 时，才把两个方向相加。这个量能解释：每个 GPU 到本地交换机的 link 都很快，但大量 GPU 同时跨组通信时仍在共同 uplink 或 spine layer 堵塞。真实网络还要考虑方向、ECMP 路由、故障降级和 oversubscription，公式只是容量模型。
+反向容量应以 $$C^{\rightarrow}(\bar S,S)$$ 单独计算；只有明确报告 `TX+RX aggregate` 时，才把两个方向相加。这个量能解释：每个 GPU 到本地交换机的 link 都很快，但大量 GPU 同时跨组通信时仍在共同 uplink 或 spine layer 堵塞。真实网络还要考虑方向、ECMP 路由、故障降级和 oversubscription，公式只是容量模型。
 
 ### Oversubscription：需求峰值与共享截面容量之比
 
@@ -576,7 +576,7 @@ $$
 {B_{\text{uplink/cut available}}}
 $$
 
-当 \(\rho_{\text{over}}>1\) 时，所有下行不能同时以各自峰值穿过该截面。有些资料使用相反的“uplink:downlink”写法，看到 `2:1` 时必须先确认定义。
+当 $$\rho_{\text{over}}>1$$ 时，所有下行不能同时以各自峰值穿过该截面。有些资料使用相反的“uplink:downlink”写法，看到 `2:1` 时必须先确认定义。
 
 分子与分母必须使用相同方向、相同的 line-rate 或 payload 口径；分子也只统计确实需要同时穿过该 cut 的需求，不能把留在 cut 同侧的流量算进去。
 
@@ -790,7 +790,7 @@ T1: 再次保存 link state、counter
 
 ### CUDA capability probe 是有方向的
 
-[CUDA Programming Guide](https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/multi-gpu-systems.html#multi-device-peer-to-peer-transfers-and-memory-access)规定可以用 `cudaDeviceCanAccessPeer()` 查询设备能否访问另一个设备的 memory，并用 `cudaDeviceEnablePeerAccess()` 启用 peer access。启用关系由“访问方 device”指向“被访问方 device”，应分别检查 \(i\rightarrow j\) 与 \(j\rightarrow i\)。
+[CUDA Programming Guide](https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/multi-gpu-systems.html#multi-device-peer-to-peer-transfers-and-memory-access)规定可以用 `cudaDeviceCanAccessPeer()` 查询设备能否访问另一个设备的 memory，并用 `cudaDeviceEnablePeerAccess()` 启用 peer access。启用关系由“访问方 device”指向“被访问方 device”，应分别检查 $$i\rightarrow j$$ 与 $$j\rightarrow i$$。
 
 一个完整的 capability matrix 不是对角对称表的假设，而是实测：
 
@@ -803,7 +803,7 @@ P_{ij}^{(c)}
 \end{cases}
 $$
 
-其中 \(c\) 可以是 copy/read/write/atomic 等应用实际需要的能力。若软件只测试一个方向，然后默认反向等价，可能在异构或受限环境中埋下错误。
+其中 $$c$$ 可以是 copy/read/write/atomic 等应用实际需要的能力。若软件只测试一个方向，然后默认反向等价，可能在异构或受限环境中埋下错误。
 
 ### P2P copy 与 remote load/store 是不同工作负载
 
@@ -857,7 +857,7 @@ topology-aware library 会综合 message size、collective algorithm、channel�
 
 本地 PCIe hop 最少的 NIC 若接到了拥塞 rail，端到端可能不如稍远但网络路径健康的 NIC。反过来，仅看网络 ECMP 也会忽略 GPU↔NIC 的跨 socket 代价。
 
-可以把 rank \(r\) 绑定到 NIC \(n\) 的估价写成多目标函数。不同量纲不能直接相加，因此先把观测映射为同方向、无量纲的归一化 penalty：
+可以把 rank $$r$$ 绑定到 NIC $$n$$ 的估价写成多目标函数。不同量纲不能直接相加，因此先把观测映射为同方向、无量纲的归一化 penalty：
 
 $$
 \operatorname{cost}(r,n)
@@ -868,7 +868,7 @@ w_p \hat L_{\text{PCIe}}(r,n)
 +w_c \hat L_{\text{CPU-NUMA}}(r,n)
 $$
 
-其中 \(\hat L\) 越大表示归一化延迟 penalty 越高，\(\hat\rho_{\text{shared}}\) 越大表示共享截面的预计竞争越强。归一化基线和权重随 workload 改变：小消息对 latency 更敏感，大 collective 更关心共享截面和 path diversity。这是工程模型，不是厂商公式，必须用当前集群的测量标定。
+其中 $$\hat L$$ 越大表示归一化延迟 penalty 越高，$$\hat\rho_{\text{shared}}$$ 越大表示共享截面的预计竞争越强。归一化基线和权重随 workload 改变：小消息对 latency 更敏感，大 collective 更关心共享截面和 path diversity。这是工程模型，不是厂商公式，必须用当前集群的测量标定。
 
 ### Rank mapping 要配合并行组
 
@@ -993,7 +993,7 @@ IOMMU/peer mapping 问题可能表现为错误数据而非清晰异常。实验�
 
 ### 大消息近似看 bottleneck bandwidth
 
-对大小为 \(S\) 的单次数据移动，可先用 latency-bandwidth 模型：
+对大小为 $$S$$ 的单次数据移动，可先用 latency-bandwidth 模型：
 
 $$
 T(S)
@@ -1011,17 +1011,17 @@ $$
 
 其中：
 
-- \(\alpha_{\text{setup}}\)：API、registration、launch 或 protocol setup；
-- \(\alpha_e\)：每段固定转发/协议成本；
-- \(B_{\text{bottleneck}}\)：路径上当前可用的最小共享容量；
-- \(T_{\text{queue}}\)：与其他流竞争产生的排队；
-- \(T_{\text{sync}}\)：等待 producer、completion 与 consumer ordering。
+- $$\alpha_{\text{setup}}$$：API、registration、launch 或 protocol setup；
+- $$\alpha_e$$：每段固定转发/协议成本；
+- $$B_{\text{bottleneck}}$$：路径上当前可用的最小共享容量；
+- $$T_{\text{queue}}$$：与其他流竞争产生的排队；
+- $$T_{\text{sync}}$$：等待 producer、completion 与 consumer ordering。
 
-对足够大的 \(S\)，容量项占主导；对小消息，launch、doorbell、round trip 和 synchronization 更重要。单个大 buffer 的 GB/s 不能预测小 collective 的 latency。
+对足够大的 $$S$$，容量项占主导；对小消息，launch、doorbell、round trip 和 synchronization 更重要。单个大 buffer 的 GB/s 不能预测小 collective 的 latency。
 
 ### 多流并发要看共享边
 
-若 \(k\) 条 flow 同时经过一条容量 \(C_e\) 的共享边，理想公平分配也只有：
+若 $$k$$ 条 flow 同时经过一条容量 $$C_e$$ 的共享边，理想公平分配也只有：
 
 $$
 \sum_{i=1}^{k} b_{i,e}\le C_e
@@ -1065,8 +1065,8 @@ H5: 某个 GPU pair 的异常与 ACS/IOMMU/降宽有关，而非 GPU 时钟。
 | 维度 | 建议取值 | 目的 |
 | --- | --- | --- |
 | 路径类别 | NVLink direct、NVSwitch、PIX/PXB、PHB/NODE/SYS、GPU↔NIC、跨节点 | 隔离不同物理层级 |
-| 方向 | \(i\rightarrow j\)、\(j\rightarrow i\)、双向 | 发现不对称与共享资源 |
-| size | 从小消息到超过 cache、进入 steady-state 的大消息 | 分离 \(\alpha\) 与 bandwidth |
+| 方向 | $$i\rightarrow j$$、$$j\rightarrow i$$、双向 | 发现不对称与共享资源 |
+| size | 从小消息到超过 cache、进入 steady-state 的大消息 | 分离 $$\alpha$$ 与 bandwidth |
 | 并发 | 单 pair、多 pair、与 compute overlap | 定位 bisection/oversubscription |
 | memory path | GPU peer、host pinned、GDR、host staged | 验证 direct/fallback |
 | binding | 不同 GPU-NIC-CPU 三元组 | 验证 affinity |

@@ -3,7 +3,7 @@ layout: post
 title: "LLM 推理容量规划：从请求 Trace 推到 GPU 数量"
 subtitle: "把 ISL、OSL、KV Cache、P/D Goodput 与扩容提前量放进同一张账"
 date: 2026-07-11 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-inference
@@ -461,20 +461,26 @@ visible wait    请求/attention 真正因 KV 未到而等待
 
 ## Prefix Cache 怎样进入容量模型
 
-不要简单乘一个平均 hit ratio。更合适的是按请求计算：
+不要简单乘一个平均 hit ratio，也不要把命中后的后缀视为从零开始的短 prompt。对请求 $r$，令 $N_r=ISL_r$，$H_r$ 为 cache manager 确认可复用的前缀 token 数，$U_r=N_r-H_r$，满足 $0\le H_r\le N_r$。复用前文的二维 profile，保持 batch、并行配置、backend 和硬件条件 $\mathcal C$ 一致：
 
 $$
 saved\_prefill_r
-=f(ISL_r)-f(ISL_r-hit_r)
+=f(0,N_r,\mathcal C)-f(H_r,U_r,\mathcal C)
 $$
 
-再减去读取成本：
+这里 $f(H,U,\mathcal C)$ 是已有 $H$ token 可用 KV 时，处理 $U$ 个新 token 的 GPU 时间。新的后缀 query 仍要读取历史 $H$ 个 token 的 K/V；如引擎为了首 token logits 或 prompt logprobs 需要重算部分位置，也必须反映在实际可复用长度与 profile 中。全前缀命中不必然意味着整个首 token 路径没有计算。
+
+可以用 dense causal attention 的有效 query-key 对数检查这个区别。总长度 $N=100$、命中 $H=50$ 时，完整 attention 有 $100\times101/2=5050$ 对；后缀还有 $50\times50+50\times51/2=3775$ 对，省下 1275 对。把后缀错当独立 50-token prompt 会漏掉 $H\times U$ 项，并高估节省量。[FlashAttention 官方 `flash_attn_with_kvcache` 的非方形 causal mask](https://github.com/Dao-AILab/flash-attention#flashattention)展示了同样的历史读取关系。对数只能说明逻辑工作量，不能直接代替 kernel 时间，也不适用于未经调整的 sliding-window 或 sparse attention。
+
+若 $f$ 仅测 GPU 计算，再减去此前未计入的查找和读取开销：
 
 $$
 net\_gain_r=
 saved\_prefill_r
--lookup_r-load_r-onboard_r
+-T_{lookup,r}-T_{load,r}-T_{onboard,r}
 $$
+
+所有项统一为时间单位；这个加法模型假设这些成本串行进入所比较的路径。存在重叠时，应减去实际增加的关键路径等待；若端到端 profile 已含这些阶段，就不能重复扣除。净收益也可能为负。容量预测还必须把 offload/onboard 的链路占用单独纳入网络资源账，即使其延迟被计算隐藏。
 
 不同 prefix 位置的计算价值不同，命中层级也不同。HBM local hit、remote DRAM hit 与 SSD hit 不能合并。
 

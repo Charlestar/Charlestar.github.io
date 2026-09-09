@@ -159,6 +159,9 @@ for (const name of posts) {
       errors.push(`${name}:${index + 1}: standalone \\[ or \\] is not rendered as display math by kramdown; use $$`);
     }
     const mathDelimiters = inspectMathDelimiters(proseLine);
+    if (mathDelimiters.texOpener) {
+      errors.push(`${name}:${index + 1}: raw TeX delimiters are consumed by Markdown escaping; use kramdown $$...$$ for inline math, or a standalone $$ block`);
+    }
     if (
       mathDelimiters.doubleDollars > 0 ||
       mathDelimiters.singleDollars >= 2 ||

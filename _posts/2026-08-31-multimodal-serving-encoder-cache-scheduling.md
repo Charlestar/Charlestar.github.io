@@ -3,7 +3,7 @@ layout: post
 title: "多模态 Serving：图片进入 LLM 之前发生了什么"
 subtitle: "拆解 Media I/O、Processor、Encoder、Connector、Embedding Cache 与语言模型调度"
 date: 2026-08-31 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: model-serving-agents
@@ -55,10 +55,10 @@ $$
 
 其中：
 
-- \(I\) 是原始图片；
-- \(P\) 是缩放、归一化或切块后的 Pixel Tensor；
-- \(H_v\) 是视觉编码器输出；
-- \(E_v\) 是已经对齐到语言模型隐藏维度的视觉 Embedding。
+- $$I$$ 是原始图片；
+- $$P$$ 是缩放、归一化或切块后的 Pixel Tensor；
+- $$H_v$$ 是视觉编码器输出；
+- $$E_v$$ 是已经对齐到语言模型隐藏维度的视觉 Embedding。
 
 语言模型最终接收的是文本 Embedding 与视觉 Embedding 组合后的序列，而不是 JPEG 字节本身。
 
@@ -195,7 +195,7 @@ tokenizer_revision
 
 ## 7. 动态分辨率怎样变成视觉 Token
 
-固定分辨率模型通常把图片缩放到固定尺寸，再按 Patch 切分。若 Processor 将 \(H \times W\) 的处理后图片分别补齐到最近的 \(p\) 的整数倍，Patch 大小为 \(p \times p\)，忽略额外特殊 Token 时，视觉 Patch 数是：
+固定分辨率模型通常把图片缩放到固定尺寸，再按 Patch 切分。若 Processor 将 $$H \times W$$ 的处理后图片分别补齐到最近的 $$p$$ 的整数倍，Patch 大小为 $$p \times p$$，忽略额外特殊 Token 时，视觉 Patch 数是：
 
 $$
 N_v = \left\lceil \frac{H}{p} \right\rceil
@@ -204,7 +204,7 @@ $$
 
 这里的向上取整来自补齐操作，并不是所有视觉编码器的通式：若 Patch Embedding 使用不带 Padding 的步长卷积，数量应按实际处理后尺寸取下整；若 Processor 先 Resize/Crop 到固定可整除尺寸，则直接使用处理后的网格大小。Serving 侧应读取模型 Processor 给出的真实 Grid，而不是仅凭原图宽高套公式。
 
-动态分辨率模型不再让所有图片都产生固定 \(N_v\)。高分辨率文档、长图或宽屏截图会保留更多细节，也会生成更多视觉 Token。Qwen2-VL 将这种能力称为 Naive Dynamic Resolution，并进一步用多模态位置编码表达图片与视频的空间、时间信息。
+动态分辨率模型不再让所有图片都产生固定 $$N_v$$。高分辨率文档、长图或宽屏截图会保留更多细节，也会生成更多视觉 Token。Qwen2-VL 将这种能力称为 Naive Dynamic Resolution，并进一步用多模态位置编码表达图片与视频的空间、时间信息。
 
 动态长度提升了信息保真度，却把成本控制问题交给 Serving：
 
@@ -220,7 +220,7 @@ $$
 
 对 Decoder-only 模型，视觉 Embedding 通常只在 Prefill 阶段输入一次，却会影响后续每一层的 KV 状态。
 
-假设文本 Prompt 有 \(N_t\) 个 Token，视觉部分产生 \(N_v\) 个 Embedding，总 Prefill 长度近似为：
+假设文本 Prompt 有 $$N_t$$ 个 Token，视觉部分产生 $$N_v$$ 个 Embedding，总 Prefill 长度近似为：
 
 $$
 N_{\text{prefill}} = N_t + N_v
@@ -235,7 +235,7 @@ M_{KV} \propto
 2 \times L \times N_{\text{prefill}} \times H_{KV} \times D
 $$
 
-其中 \(L\) 是层数，\(H_{KV}\) 是 KV Head 数，\(D\) 是 Head Dimension，系数 2 对应 Key 与 Value。实际字节数还取决于数据类型、Block 对齐和并行切分。
+其中 $$L$$ 是层数，$$H_{KV}$$ 是 KV Head 数，$$D$$ 是 Head Dimension，系数 2 对应 Key 与 Value。实际字节数还取决于数据类型、Block 对齐和并行切分。
 
 这解释了为什么一张图片虽然在 API 层只是一个对象，却可能消耗数百或数千个“上下文位置”。调度器若只按文本 Token 收费和限流，会系统性低估多模态请求。
 
@@ -390,7 +390,7 @@ LLM Prefix Cache 则依赖最终输入 Embedding、位置编码、模型权重�
 
 ## 16. Processor Cache 为什么会消耗大量主机内存
 
-压缩图片文件可能只有几百 KB，解码成 Float Tensor 后体积会显著增加。以 RGB、FP32 为例，单张 \(H \times W\) 图片的原始 Tensor 大约占：
+压缩图片文件可能只有几百 KB，解码成 Float Tensor 后体积会显著增加。以 RGB、FP32 为例，单张 $$H \times W$$ 图片的原始 Tensor 大约占：
 
 $$
 M \approx H \times W \times 3 \times 4\ \text{bytes}

@@ -3,7 +3,7 @@ layout: post
 title: "vLLM Model Runner V2：GPU-native 与 async-first 的执行核心"
 subtitle: "从稳定状态表到无 CPU 同步的 CUDA Stream"
 date: 2026-05-25 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -252,7 +252,7 @@ CPU staged writes
 
 并非所有状态都值得常驻 GPU。长 prompt 的 token IDs 可能只在 prefill 的对应 chunk 用一次，全部复制会占显存。
 
-Universal Virtual Addressing（UVA）允许 GPU kernel 通过统一地址访问 pinned host memory。MRV2 在部分路径中让 GPU 直接读取 CPU-resident `prefill_token_ids`，避免建立完整 device 副本。
+[Unified Virtual Addressing（UVA）](https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__UNIFIED.html)统一了 host/device 地址空间；在硬件、分配方式和映射满足要求时，GPU kernel 可直接访问对应的 pinned host memory。MRV2 在部分路径中让 GPU 直接读取 CPU-resident `prefill_token_ids`，避免建立完整 device 副本。统一地址本身不等于把任意 CPU 指针变成 GPU 可访问内存。
 
 这是一种容量与带宽的交换：
 

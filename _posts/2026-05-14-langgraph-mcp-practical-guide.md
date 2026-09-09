@@ -3,7 +3,7 @@ layout: post
 title: "LangGraph + MCP：构建可恢复的 Agent 工作流"
 subtitle: "状态机负责执行语义，协议负责外部能力边界"
 date: 2026-05-14
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: model-serving-agents
@@ -79,31 +79,29 @@ search_web   search_papers  read_internal_docs
                  │
                  ▼
            review_evidence
-           │              │
- evidence missing      sufficient
-           │              │
-           └─► refine ─┐   ▼
-                       └─ write_report
-                              │
-                     send requested?
-                       │           │
-                       no          yes
-                       │           ▼
-                       │       approval interrupt
-                       │           │
-                       └──────┬────┘
-                              ▼
-                             END
+             ├─ missing + budget left → refine → rerun search fan-out above
+             ├─ missing + limit reached → mark_insufficient ─┐
+             └─ sufficient ────────────────────────────────┤
+                                                           ▼
+                                                      write_report
+                                                           │
+                                                    send requested?
+                                                      ├─ no → END
+                                                      └─ yes
+                                                           ▼
+                                                    approval interrupt
+                                                      ├─ rejected → END
+                                                      └─ approved → send_report → END
 ```
 
-这张图中，LLM 可以参与 `make_plan`、`review_evidence` 和 `write_report`；搜索与读取则通过 MCP。最大检索轮数、发送审批和错误分类由 workflow 强制执行，不交给模型自行承诺。
+这张图中，LLM 可以参与 `make_plan`、`review_evidence` 和 `write_report`；搜索与读取则通过 MCP。每轮检索统一增加 `attempts`，证据不足且尚未达到上限时，`refine` 更新查询并回到检索分支。次数耗尽后，`mark_insufficient` 把缺失证据写入状态，`write_report` 生成明确说明这些限制的草稿。只有审批通过才执行独立的 `send_report` 节点；该节点使用下文的业务幂等机制。最大检索轮数、发送审批和错误分类由 workflow 强制执行，不交给模型自行承诺。
 
 ## State 只保存可恢复的事实
 
-可以先定义一份与框架无关的状态契约：
+可以先定义业务字段，并为会被并行节点更新的 `evidence` 声明 reducer。这里约定 `source_id` 标识一次不可变证据快照；同一 ID 的重复提交必须具有相同内容，重新检索到的新版本使用新的快照 ID：
 
 ```python
-from typing import Literal, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 class Evidence(TypedDict):
     source_id: str
@@ -112,10 +110,21 @@ class Evidence(TypedDict):
     excerpt: str
     retrieved_at: str
 
+def merge_evidence(
+    existing: list[Evidence], incoming: list[Evidence]
+) -> list[Evidence]:
+    merged: dict[str, Evidence] = {}
+    for item in [*existing, *incoming]:
+        key = item["source_id"]
+        if key in merged and merged[key] != item:
+            raise ValueError(f"Conflicting evidence snapshot: {key}")
+        merged[key] = item
+    return [merged[key] for key in sorted(merged)]
+
 class ResearchState(TypedDict):
     question: str
     plan: list[str]
-    evidence: list[Evidence]
+    evidence: Annotated[list[Evidence], merge_evidence]
     attempts: int
     draft: str | None
     review_status: Literal["pending", "enough", "insufficient"]
@@ -141,7 +150,9 @@ State 中适合保存：
 
 ## 并行分支必须定义合并语义
 
-三个检索节点都向 `evidence` 写结果。如果默认“后写覆盖先写”，最终只能保留最后完成的分支。应给该 channel 定义 append/deduplicate reducer：
+三个检索节点都向 `evidence` 写结果。LangGraph 的默认单值 channel 在一个 super-step 内收到多个节点对同一字段的更新时，会抛出 `INVALID_CONCURRENT_GRAPH_UPDATE`，不会按完成顺序静默覆盖；不同 step 中的单次普通更新才会替换此前的字段值。并行汇总需要显式声明 reducer，官方[并发更新错误说明](https://docs.langchain.com/oss/python/langgraph/errors/INVALID_CONCURRENT_GRAPH_UPDATE)也以 fan-out 写同一 key 为例解释了这一要求。
+
+因此，上面的 `ResearchState` 使用 `Annotated[list[Evidence], merge_evidence]`，并作为 `StateGraph` 的状态 schema。每个分支只返回自己的增量证据，合并后的顺序由稳定 ID 决定，与哪个节点先完成无关。
 
 ```text
 web evidence ─────┐

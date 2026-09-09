@@ -3,7 +3,7 @@ layout: post
 title: "NVFP4 KV Cache：Blackwell 上的 4-bit 缓存量化"
 subtitle: "从 E2M1 与双层缩放到容量、内核和精度验证"
 date: 2026-06-02 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -26,7 +26,7 @@ KV Cache 是用显存换计算：每生成一个 token，模型把它在各层�
 
 ## KV Cache 为什么会成为显存主体
 
-以标准 multi-head/GQA attention 为例，每个 token、每一层要保存 \(H_{kv}\) 个 K heads 和 \(H_{kv}\) 个 V heads，每个 head 维度为 \(D\)。忽略页对齐、缩放因子与 allocator metadata，缓存大小为：
+以标准 multi-head/GQA attention 为例，每个 token、每一层要保存 $$H_{kv}$$ 个 K heads 和 $$H_{kv}$$ 个 V heads，每个 head 维度为 $$D$$。忽略页对齐、缩放因子与 allocator metadata，缓存大小为：
 
 $$
 M_{KV}=2\cdot L\cdot N\cdot H_{kv}\cdot D\cdot B
@@ -34,11 +34,11 @@ $$
 
 其中：
 
-- \(L\)：attention 层数；
-- \(N\)：所有在途请求当前持有的 token 总数；
-- \(H_{kv}\)：KV head 数量；
-- \(D\)：head dimension；
-- \(B\)：每个 K/V 元素的字节数；
+- $$L$$：attention 层数；
+- $$N$$：所有在途请求当前持有的 token 总数；
+- $$H_{kv}$$：KV head 数量；
+- $$D$$：head dimension；
+- $$B$$：每个 K/V 元素的字节数；
 - 系数 2：分别保存 Key 与 Value。
 
 单 token 的裸缓存量则是：
@@ -108,13 +108,13 @@ NVFP4 的数值 payload 使用 E2M1：
 0, 0.5, 1, 1.5, 2, 3, 4, 6
 ```
 
-负数使用对应符号。因此单看 E2M1，它能表示的点非常少，范围也只有约 \([-6,6]\)。若直接把真实 K/V 四舍五入到这些点，较小值会被压成 0，较大值会被截断到 6，误差很难接受。
+负数使用对应符号。因此单看 E2M1，它能表示的点非常少，范围也只有约 $$[-6,6]$$。若直接把真实 K/V 四舍五入到这些点，较小值会被压成 0，较大值会被截断到 6，误差很难接受。
 
 缩放因子负责把不同范围的真实数据映射到这组离散值上。量化的关键并不是“4 bit 能表示多少绝对数值”，而是每组数值能否找到合适的局部尺度。
 
 ## 双层缩放怎样恢复动态范围
 
-NVFP4 对每 16 个值使用一个 E4M3 FP8 block scale，并为更大张量使用一个 FP32 global scale。设某个 micro-block 的全局尺度为 \(s_t\)，局部尺度为 \(s_b\)，可以用下式理解量化与反量化：
+NVFP4 对每 16 个值使用一个 E4M3 FP8 block scale，并为更大张量使用一个 FP32 global scale。设某个 micro-block 的全局尺度为 $$s_t$$，局部尺度为 $$s_b$$，可以用下式理解量化与反量化：
 
 $$
 q_i=Q_{E2M1}\left(\frac{x_i}{s_t s_b}\right)
@@ -124,7 +124,7 @@ $$
 \hat{x}_i=s_t s_b q_i
 $$
 
-其中 \(Q_{E2M1}\) 表示舍入到最近 E2M1 值并处理超出范围的输入。
+其中 $$Q_{E2M1}$$ 表示舍入到最近 E2M1 值并处理超出范围的输入。
 
 数据组织可以画成：
 
@@ -146,7 +146,7 @@ tensor global scale: FP32
 
 ## 用一组数直观看缩放的作用
 
-假设某个 micro-block 的值主要落在 \([-0.7,0.7]\)，另一个 block 落在 \([-5.5,5.5]\)。若二者共享同一尺度：
+假设某个 micro-block 的值主要落在 $$[-0.7,0.7]$$，另一个 block 落在 $$[-5.5,5.5]$$。若二者共享同一尺度：
 
 - 尺度按第二组选择时，第一组大量小值可能被舍入到 0 或少数几个点；
 - 尺度按第一组选择时，第二组的极值会被 clipping。
@@ -161,7 +161,7 @@ tensor global scale: FP32
 
 一个 16-value micro-block 包含：
 
-- 16 个 E2M1：\(16\times4=64\) bits，即 8 bytes；
+- 16 个 E2M1：$$16\times4=64$$ bits，即 8 bytes；
 - 1 个 E4M3 block scale：8 bits，即 1 byte；
 - 另有 amortized FP32 tensor scale、padding 和布局元数据。
 
@@ -225,10 +225,10 @@ A=\operatorname{softmax}\left(\frac{QK^T}{\sqrt{d}}+M\right),
 \qquad O=AV
 $$
 
-量化后使用 \(K+\Delta K\) 与 \(V+\Delta V\)：
+量化后使用 $$K+\Delta K$$ 与 $$V+\Delta V$$：
 
-- \(\Delta K\) 先影响 attention logits，再经过 softmax；当两个候选位置分数接近时，小误差可能改变注意力分配；
-- \(\Delta V\) 在既定权重下进入加权和，误差会被 attention weights 组合；
+- $$\Delta K$$ 先影响 attention logits，再经过 softmax；当两个候选位置分数接近时，小误差可能改变注意力分配；
+- $$\Delta V$$ 在既定权重下进入加权和，误差会被 attention weights 组合；
 - 多层误差继续通过 residual stream 传递，最终可能改变 token logits。
 
 因此只测 KV 张量的平均 MSE 不足以代表生成质量。相同 MSE 若集中在关键 head、长距离检索位置或极少数 outlier 上，影响可能完全不同。
@@ -339,7 +339,7 @@ scale granularity and calibration
 
 ### GQA
 
-Grouped-Query Attention 让多个 Q heads 共享较少的 KV heads，公式中的 \(H_{kv}\) 已经降低。NVFP4 仍按比例压缩 K/V，但 KV 在总显存中的占比可能比 MHA 小。
+Grouped-Query Attention 让多个 Q heads 共享较少的 KV heads，公式中的 $$H_{kv}$$ 已经降低。NVFP4 仍按比例压缩 K/V，但 KV 在总显存中的占比可能比 MHA 小。
 
 ### MLA
 

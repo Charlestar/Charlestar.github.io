@@ -3,7 +3,7 @@ layout: post
 title: "MoE 与推测解码：计算、通信和接受率的联合优化"
 subtitle: "从专家散射看清为什么验证更多 token 可能反而更慢"
 date: 2026-05-29 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -25,7 +25,7 @@ tags: [推测解码, MoE, 专家并行]
 
 ## 从一层 MoE 的执行过程开始
 
-一个典型 sparse MoE 层包含 router、若干 routed experts，模型也可能同时包含 shared expert。对 token 表示 \(x\)，router 给出各专家分数，并选择 top-\(r\) 个专家：
+一个典型 sparse MoE 层包含 router、若干 routed experts，模型也可能同时包含 shared expert。对 token 表示 $$x$$，router 给出各专家分数，并选择 top-$$r$$ 个专家：
 
 $$
 \mathcal{E}(x)=\operatorname{TopR}(\operatorname{softmax}(W_r x))
@@ -76,13 +76,13 @@ unpermute + weighted combine
 
 ## dense 验证与 MoE 验证的差别
 
-假设目标模型验证 \(m\) 个 token。dense FFN 无论 \(m=1\) 还是 \(m=8\)，每层都会访问同一组权重：
+假设目标模型验证 $$m$$ 个 token。dense FFN 无论 $$m=1$$ 还是 $$m=8$$，每层都会访问同一组权重：
 
 $$
 \mathcal{W}_{dense}(m)=\mathcal{W}_{dense}
 $$
 
-当 batch 很小时，权重读取通常占主要成本；一次处理更多 token 能提高算术强度，所以 \(T_{dense}(8)\) 往往远小于 \(8T_{dense}(1)\)。这为推测解码创造了空间。
+当 batch 很小时，权重读取通常占主要成本；一次处理更多 token 能提高算术强度，所以 $$T_{dense}(8)$$ 往往远小于 $$8T_{dense}(1)$$。这为推测解码创造了空间。
 
 MoE 的活跃权重集合则取决于 token 路由：
 
@@ -115,13 +115,13 @@ $$
 
 先把系统成本放在一旁，经典推测采样的正确性来自严格的接受与校正规则。
 
-草稿模型按 \(q\) 生成候选 \(y\)，目标模型计算对应概率 \(p(y)\)。候选以如下概率被接受：
+草稿模型按 $$q$$ 生成候选 $$y$$，目标模型计算对应概率 $$p(y)$$。候选以如下概率被接受：
 
 $$
 P(accept\ y)=\min\left(1,\frac{p(y)}{q(y)}\right)
 $$
 
-在第一次拒绝处，不能简单地丢掉候选后直接从 \(p\) 重采样；需要从校正分布中采样：
+在第一次拒绝处，不能简单地丢掉候选后直接从 $$p$$ 重采样；需要从校正分布中采样：
 
 $$
 p'(x)=\operatorname{Normalize}\left(\max(p(x)-q(x),0)\right)
@@ -141,10 +141,10 @@ $$
 
 设一次推测轮：
 
-- 草稿阶段提出 \(k\) 个候选；
-- 目标模型验证 \(n\) 个节点，链式草稿时常有 \(n\approx k+1\)；
-- 本轮最终提交 \(R\) 个 token；
-- 记账、采样与 KV 处理成本为 \(T_{book}\)。
+- 草稿阶段提出 $$k$$ 个候选；
+- 目标模型验证 $$n$$ 个节点，链式草稿时常有 $$n\approx k+1$$；
+- 本轮最终提交 $$R$$ 个 token；
+- 记账、采样与 KV 处理成本为 $$T_{book}$$。
 
 推测轮成本为：
 
@@ -152,15 +152,15 @@ $$
 T_{spec}=T_{draft}(k)+T_{verify}^{moe}(n,\mathcal{U})+T_{book}
 $$
 
-其中 \(\mathcal{U}\) 表示各层活跃专家并集及其分布。若普通自回归生成一个 token 的成本为 \(T_{AR}\)，一个直观的相对效用可以写成：
+其中 $$\mathcal{U}$$ 表示各层活跃专家并集及其分布。若普通自回归生成一个 token 的成本为 $$T_{AR}$$，一个直观的相对效用可以写成：
 
 $$
 Utility=\frac{R\cdot T_{AR}}{T_{spec}}
 $$
 
-只有 \(Utility>1\) 时，这一轮才真正节省时间。
+只有 $$Utility>1$$ 时，这一轮才真正节省时间。
 
-平均接受长度变大通常提高 \(R\)，但以下情况仍可能让效用下降：
+平均接受长度变大通常提高 $$R$$，但以下情况仍可能让效用下降：
 
 1. drafter 自己很慢，尤其 drafter 也包含 MoE 层；
 2. 更宽的候选树触发大量 unique experts；
@@ -209,7 +209,7 @@ root
 
 ### 根据实时效用调整是否推测以及 draft length
 
-Cascade 的思路是先短暂测试当前请求的推测效用，再在一段稳定区间中选择是否启用 speculation 以及使用多大的 \(K\)。它利用相邻 iteration 行为具有一定局部性的假设，避免每一步都进行昂贵搜索。
+Cascade 的思路是先短暂测试当前请求的推测效用，再在一段稳定区间中选择是否启用 speculation 以及使用多大的 $$K$$。它利用相邻 iteration 行为具有一定局部性的假设，避免每一步都进行昂贵搜索。
 
 这类方法不需要预测具体专家，解决的是“当前请求现在值不值得推测”：
 
@@ -229,13 +229,13 @@ test phase: 试运行若干候选 K，测 token gain / verification cost
 
 EcoSpec 把 predicted marginal expert activation cost 纳入候选树选择。其目标不是盲目选择触发专家最少的 token，而是在候选概率与新增专家成本之间做权衡：优先选择既可能被接受、又能复用当前验证集合已覆盖专家的路径。
 
-可以把候选节点 \(v\) 的启发式评分写成：
+可以把候选节点 $$v$$ 的启发式评分写成：
 
 $$
 Score(v)=\log P_q(v)-\lambda\cdot \Delta C_{expert}(v)
 $$
 
-其中 \(\Delta C_{expert}(v)\) 是把节点加入树后预计新增的专家成本，\(\lambda\) 控制概率质量与成本之间的权衡。这只是帮助选择“验证谁”；最终入选节点仍由完整目标模型验证，所以不会因为候选排序本身改变目标分布。
+其中 $$\Delta C_{expert}(v)$$ 是把节点加入树后预计新增的专家成本，$$\lambda$$ 控制概率质量与成本之间的权衡。这只是帮助选择“验证谁”；最终入选节点仍由完整目标模型验证，所以不会因为候选排序本身改变目标分布。
 
 难点是专家路由依赖目标模型各层隐藏状态，在真正运行 target 前并不完全已知。因此需要轻量 expert predictor，并且预测误差也要进入评估：预测器太重会吞掉收益，预测不准则无法降低真实专家并集。
 
@@ -249,7 +249,7 @@ MoE-Spec 从另一侧入手：限制每层验证时实际加载或执行的专�
 
 | 路径 | 控制对象 | 是否完整执行目标模型 | 主要风险 |
 | --- | --- | --- | --- |
-| 动态 \(K\) / 开关 | 候选数量 | 是 | 控制滞后、频繁切换 |
+| 动态 $$K$$ / 开关 | 候选数量 | 是 | 控制滞后、频繁切换 |
 | 成本感知树选择 | 验证哪些候选 | 是 | 专家预测器成本与误差 |
 | 专家预算 | target 执行哪些专家 | 否 | 输出分布或任务质量变化 |
 
@@ -298,9 +298,9 @@ $$
 
 其中：
 
-- \(T_{route}\) 受验证 token 数影响；
-- \(T_{dispatch}\) 和 \(T_{combine}\) 受 assignment 数、消息大小、跨节点路径和 collective 实现影响；
-- \(T_{grouped\ GEMM}\) 受 unique experts、每专家 token 数和负载倾斜影响；
+- $$T_{route}$$ 受验证 token 数影响；
+- $$T_{dispatch}$$ 和 $$T_{combine}$$ 受 assignment 数、消息大小、跨节点路径和 collective 实现影响；
+- $$T_{grouped\ GEMM}$$ 受 unique experts、每专家 token 数和负载倾斜影响；
 - 整层延迟往往由最慢 rank 决定。
 
 候选树可能让某些专家形成更大的局部 batch，提高 GEMM 效率；也可能把 token 稀疏地摊到许多专家，使每组矩阵都太小。这说明“更多并行 token”既可能改善 kernel shape，也可能破坏权重复用，必须 profile 才能判断净效应。
@@ -395,7 +395,7 @@ Reuse=1-\frac{|\bigcup_i\mathcal{E}(x_i)|}
 {\sum_i|\mathcal{E}(x_i)|}
 $$
 
-它不是跨模型通用的性能指标，但在 top-\(r\) 固定时，能帮助比较两种候选树是否把 assignment 集中在更小的专家集合中。
+它不是跨模型通用的性能指标，但在 top-$$r$$ 固定时，能帮助比较两种候选树是否把 assignment 集中在更小的专家集合中。
 
 ### 最后拆解系统时间
 
@@ -429,13 +429,13 @@ MoE 推测解码对工作负载尤其敏感。至少要覆盖：
 | expert placement | 改变热点与 straggler 所在位置 |
 | 精度与 kernel | 改变 target 和 drafter 的算力/带宽平衡 |
 
-报告均值之外，还应提供 P50/P95/P99 TPOT 和每请求效用分布。静态 \(K\) 可能让一部分请求大幅加速、另一部分请求明显减速，均值无法表达这种风险。
+报告均值之外，还应提供 P50/P95/P99 TPOT 和每请求效用分布。静态 $$K$$ 可能让一部分请求大幅加速、另一部分请求明显减速，均值无法表达这种风险。
 
 ## 如何阅读论文中的性能数字
 
 这一方向的研究设置差异很大：
 
-- Cascade 在其 vLLM 原型与五个 MoE 工作负载中，重点展示动态选择可以避免静态 \(K\) 的减速，并报告相对静态策略的吞吐改善；
+- Cascade 在其 vLLM 原型与五个 MoE 工作负载中，重点展示动态选择可以避免静态 $$K$$ 的减速，并报告相对静态策略的吞吐改善；
 - MoE-Spec 报告的是在可调质量前提下进行 verification-time expert budgeting；
 - SpecMoE 的高倍率来自 CPU-offloaded、内存受限系统中的专家迁移优化；
 - EcoSpec 在 DeepSeek-V3.1、Qwen3-235B-A22B 与 GPT-OSS-120B 等实验上，将候选接受概率与边际专家成本共同纳入选择。

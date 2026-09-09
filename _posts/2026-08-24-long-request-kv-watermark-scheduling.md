@@ -3,7 +3,7 @@ layout: post
 title: "长请求治理：Chunked Prefill 之后，KV Cache 怎样避免被长输出占满"
 subtitle: "从输入公平调度、动态 KV 准入到高水位保护，理解长尾请求的完整生命周期"
 date: 2026-08-24 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -196,19 +196,19 @@ Prefix Cache 命中减少 Prefill Compute，却不会消除最终 Active Context
 
 ## 9. Prefill 结束不是内存压力结束
 
-请求完成 Prefill 时，已经拥有 \(N_{in}\) 个上下文位置。之后每生成一个 Token，KV Cache 再增加一个位置：
+以保存完整上下文的标准自回归 Attention 为例，Prefill 为 $$N_{in}$$ 个输入位置建立 KV，并产生第一个输出 token。这个刚采样的 token 还没有作为模型输入处理，因此没有它自己的 KV。若在每次前向与采样完成后观察，令 $$N_{generated}(t)$$ 包含首 token、且不采用推测解码，则已物化的有效 KV 位置数为：
 
 $$
-N_{KV}(t)=N_{in}+N_{generated}(t)
+N_{KV}(t)=N_{in}+\max\bigl(N_{generated}(t)-1,0\bigr)
 $$
 
-对一条输出上限 32K 的请求，刚进入 Decode 时只看到输入 KV，后续还可能增加 32K。多个请求同时增长时，当前空闲 Block 并不能代表未来安全。
+下一次 Decode 把刚采样的 token 作为输入，补齐它的 KV，再采样一个新 token。对一条输出上限为 $$O_{max}$$ 的请求，普通路径在生成结束前最多还会物化 $$\max(O_{max}-1,0)$$ 个输出位置；32K 的上限仍意味着接近 32K 的后续增长。推测验证临时槽位、下一步预分配、物理 Block 向上取整及共享前缀另行计数，不能把此处的有效 KV 游标直接当成 allocator 的已占用字节。多个请求同时增长时，当前空闲 Block 并不能代表未来安全。[Transformers 的缓存生成循环](https://huggingface.co/docs/transformers/main/cache_explanation)也明确先前向、再采样并将结果作为下一轮输入。
 
 这正是长输出与长输入治理的分界：Chunked Prefill 可以控制“输入 KV 多快建立”，却不能阻止 Decode 在几千轮内把 Pool 推向满载。
 
 ## 10. 为什么不能为 `max_tokens` 全额预留
 
-最保守方案是在请求进入时为 `input_tokens + max_tokens` 预留全部 KV。这样不会中途 OOM，却会严重降低并发：大量请求会提前 EOS，预留空间长期闲置。
+一种保守方案是在请求进入时按 `input_tokens + max_tokens` 再向物理 Block 边界取整，预留整个请求的 KV 增长空间。它对上述普通路径略有余量，但整体不 OOM 仍要求额外计入 workspace、推测槽位、其他请求与 allocator 开销。这种全额预留会严重降低并发：大量请求会提前 EOS，预留空间长期闲置。
 
 完全不考虑未来增长则走向另一端：当前 Batch 可以装下，但几十轮后所有请求一起增长，Scheduler 只能频繁抢占。
 
@@ -225,13 +225,14 @@ Near-term Reserve 可以按未来若干 Scheduler Iteration、长度分位数、
 
 ## 11. 把 KV Pool 划成多个压力区间
 
-可以用三个水位表达逐级压力：
+可以用三个水位表达逐级压力，约定 $0<low<high<emergency<1$，$usage$ 是同一 KV pool 的占用比例。先检查 allocator 能否为当前动作分配所需 blocks；若不能，优先进入 Exhausted 分支。仍能分配时，再按以下互斥区间分类：
 
 ```text
-normal       : usage < low watermark
+normal       : 0 <= usage < low
 pressure     : low <= usage < high
 critical     : high <= usage < emergency
-exhausted    : no allocatable block
+emergency    : emergency <= usage <= 1, allocation still feasible
+exhausted    : required blocks cannot be allocated (checked first)
 ```
 
 水位不是为了制造更多配置，而是让动作按风险递增：
@@ -241,9 +242,10 @@ exhausted    : no allocatable block
 | Normal | 正常准入与批处理 |
 | Pressure | 降低新 Prefill/Sequence 准入，偏向完成 Active Request |
 | Critical | 停止低优先级准入，路由分流，选择性抢占/Offload |
+| Emergency | 停止新增准入，使用预留空间推进可完成请求；不足以安全增长时，强制执行受支持的抢占/Offload 或按契约终止 |
 | Exhausted | Fail closed；不得无 Block 继续写 KV |
 
-阈值需要留出 Kernel Workspace、异步释放延迟和 Block 对齐，不能把理论 100% 容量当作安全终点。
+例如水位为 0.6、0.8、0.9 时，$usage=0.95$ 且仍能满足本轮分配属于 Emergency，不能落在无动作的区间。混合 KV groups、预留和异步释放可能使 allocator 在总占用低于 100% 时就无法满足某次申请，因此 Exhausted 以实际分配能力为准。阈值需要留出 Kernel Workspace、异步释放延迟和 Block 对齐，不能把理论 100% 容量当作安全终点。
 
 ## 12. 高水位时先做什么，后做什么
 
@@ -373,15 +375,16 @@ memory entitlement：请求可以长期占用多少可抢占状态
 
 静态 High/Low Priority 简单，却不反映请求离 Deadline 还有多远。一个低等级请求可能已经等了很久，而一个高等级请求刚刚到达且余量充足。
 
-可用紧迫度：
+先计算剩余预算 $b_i=deadline_i-now$，并把时间统一为同一时钟上的秒。只对 $b_i>0$、预测剩余服务时间 $s_i=predicted\_remaining\_service_i\ge0$ 的可服务请求定义无量纲紧迫度：
 
 $$
 urgency_i
-=\frac{predicted\_remaining\_service_i}
-{deadline_i-now}
+=\frac{s_i}{b_i},\qquad b_i>0
 $$
 
-值越大，越可能错过目标。但预测要考虑它当前 KV Length、所在 Worker、Batch Shape 与可能的抢占成本。
+值越大，越可能错过目标；当比值超过 1 时，按当前预测，即使立即执行也来不及在剩余预算内完成。预测要考虑当前 KV Length、所在 Worker、Batch Shape 与可能的抢占成本。
+
+对 $b_i\le0$ 必须先走过期分支，不能继续做除法：有硬取消或降级契约的请求按契约处理；已经违反软 SLO 但仍需完成的请求进入单独的过期队列。过期队列使用明确的容量份额、租户权重与 Aging，兼顾继续完成和防饥饿，避免负紧迫度把它们永久排到队尾，也避免无限大的分数占满所有资源。已经完成的请求则直接回收，不再参与排序。
 
 硬业务优先级仍可作为权重或保留容量，而不是完全被模型预测取代。若预测失效，Scheduler 应回退到可解释的 Priority + Aging 策略。
 

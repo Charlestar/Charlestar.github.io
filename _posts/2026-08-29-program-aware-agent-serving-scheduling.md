@@ -3,7 +3,7 @@ layout: post
 title: "Program-Aware Serving：Agent 等待工具时，GPU 状态该放在哪里"
 subtitle: "从 Call 依赖、PLAS/ATLAS 调度到 KV Preserve、Swap 与 Recompute，理解 Agent 工作流的推理数据面"
 date: 2026-08-29 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: model-serving-agents
@@ -107,13 +107,13 @@ Serving 层不一定要拿到完整 Prompt 内容或工具结果，只要收到�
 
 不知道 Program 最终会运行多久时，无法直接使用最短剩余作业优先。Autellix 的 PLAS（Program-Level Attained Service）采用非 Clairvoyant 思路：按 Program 已经累计获得的服务量排序。
 
-令 Program \(p\) 已完成和正在执行 Call 的累计服务为：
+令 Program $$p$$ 已完成和正在执行 Call 的累计服务为：
 
 $$
 A_p(t)=\sum_{c\in p} service_c(t)
 $$
 
-Service 可以用模型执行时间、Decode Steps 或经过校准的 GPU Work 表示。PLAS 优先选择 \(A_p\) 较小的 Program：
+Service 可以用模型执行时间、Decode Steps 或经过校准的 GPU Work 表示。PLAS 优先选择 $$A_p$$ 较小的 Program：
 
 $$
 priority(c)=-A_{program(c)}
@@ -228,7 +228,7 @@ interrupt → free KV
 tool returns → rebuild prompt → recompute KV → continue
 ```
 
-优点是等待期间不占 KV。代价与历史长度成正比，还会把恢复流量重新送入 Prefill Queue。
+优点是等待期间不占 KV。代价由历史长度、已有 prefix 命中、Attention 形式与批次 profile 决定，并不总与长度线性成正比；恢复流量还会重新进入 Prefill Queue。
 
 它适合：
 
@@ -259,7 +259,9 @@ Swap 不是 Preserve 与 Discard 之间自动最优的折中。短 Context 可�
 
 ## 12. 三种策略可以放进同一个成本模型
 
-对一次中断 \(i\)，可估算：
+要比较三种策略，必须先统一单位。下面给出面向部署决策的**货币等价成本示意模型**，所有 $C$ 均以同一种货币计量，资源单价也可取表示稀缺程度的影子价格。它不是 InferCept 原论文的原式；[论文作者的说明](https://mlsys.wuklab.io/posts/infercept/)采用 GPU memory waste 作为策略比较目标。
+
+先考虑一次最终会恢复的中断 $$i$$，以“中断到恢复所需 KV 就绪”为比较边界，省略三种方案共有的后续模型计算：
 
 $$
 C_{preserve}
@@ -268,16 +270,27 @@ $$
 
 $$
 C_{discard}
-=T_{recompute,i}\cdot price_{GPU}
+=G_{recompute,i}\cdot price_{GPU}
 $$
 
 $$
 C_{swap}
-=T_{offload,i}+T_{onboard,i}
+=T_{offload,i}\cdot price_{offload}
++T_{onboard,i}\cdot price_{onboard}
++A_{lower,i}\cdot price_{lower}
++A_{HBM,swap,i}\cdot price_{HBM}
 +C_{contention,i}
 $$
 
-真实目标不只是金钱成本，还可以包含 Deadline 违约与其他请求被阻塞的机会成本。
+其中：
+
+- $M_{KV,i}$ 用 bytes、$T_{wait,i}$ 用秒，$price_{HBM}$ 用货币/(byte·秒)，所以 Preserve 的显存驻留成本量纲闭合；
+- $G_{recompute,i}$ 是重算消耗的 GPU·秒，例如 4 张 GPU 持续占用 0.1 s 计为 0.4 GPU·秒；$price_{GPU}$ 用货币/(GPU·秒)，不能把多 GPU 的 wall-clock 时间直接当作资源量；
+- $T_{offload,i}$、$T_{onboard,i}$ 为 profile 中归属于该请求的传输资源占用秒数，两项单价用货币/秒，并约定覆盖相应 copy engine/链路资源；排队时间和被计算隐藏的时间需与用户可见延迟分开；
+- $A_{lower,i}=\int M_{lower,i}(t)\,dt$ 是下层存储的 byte·秒，$A_{HBM,swap,i}$ 是复制、确认与恢复期间仍驻留 HBM 的 byte·秒，两项价格均用货币/(byte·秒)；
+- $C_{contention,i}$ 是未被上述资源计费覆盖的争用机会成本，必须已经换算为货币，不能再把原始延迟秒数直接相加，也不能把同一代价重复计费。
+
+该模型比较增量成本，不能当作云账单的直接加总公式。Deadline 是可行性约束：成本最低但来不及恢复的方案仍可能不可选。若把违约也纳入标量目标，需要另加定义了金额的惩罚；预测存在取消或永不返回时，应按恢复概率和 TTL 计算期望占用及条件恢复成本。并发传输的资源量还必须避免对同一份共享链路容量重复计账。
 
 关键输入是预测等待时间，但工具延迟通常长尾且不稳定。成本模型应使用分布或置信区间，并允许到达 TTL 后重新评估：开始先 Preserve，等待变长后再 Offload；而不是在中断发生时做一次不可更改的决定。
 
@@ -403,7 +416,7 @@ Join Node 还要定义失败策略：任一分支失败即取消其他分支，�
 
 ## 19. Program SLO 需要从终点反推 Call 紧迫度
 
-若 Program Deadline 为 \(D_p\)，当前时间为 \(t\)，关键路径预计剩余服务为 \(R_p\)，可以定义 Slack：
+若 Program Deadline 为 $$D_p$$，当前时间为 $$t$$，关键路径预计剩余服务为 $$R_p$$，可以定义 Slack：
 
 $$
 slack_p=D_p-t-R_p
@@ -419,7 +432,7 @@ hard policy: tenant / priority / safety constraints
 
 这比把每个 Call 都设置同一个静态 Priority 更贴近 Program 终点。
 
-但 \(R_p\) 很难准确预测。模型应输出区间与置信度，预测漂移时退回 PLAS/ATLAS + Aging，而不是让错误 Deadline 模型饿死其他任务。
+但 $$R_p$$ 很难准确预测。模型应输出区间与置信度，预测漂移时退回 PLAS/ATLAS + Aging，而不是让错误 Deadline 模型饿死其他任务。
 
 ## 20. “最短 Program 优先”仍需要防饥饿
 
@@ -463,7 +476,7 @@ tool wait begins
 
 ## 22. TTL 不应只有一个全局常数
 
-简单策略是中断后保留 KV \(T\) 秒，超时再 Offload/Discard。统一 TTL 无法适配：
+简单策略是中断后保留 KV $$T$$ 秒，超时再 Offload/Discard。统一 TTL 无法适配：
 
 - 1ms 计算器；
 - 数百毫秒检索；

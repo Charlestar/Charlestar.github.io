@@ -3,7 +3,7 @@ layout: post
 title: "NVIDIA Dynamo：把多套推理引擎组织成一个系统"
 subtitle: "从请求路由、KV 状态到 P/D 扩缩容与 Kubernetes 编排"
 date: 2026-07-08 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-inference
@@ -252,7 +252,9 @@ Prefill 完成后，D 需要：
 - stop、grammar 与 request deadline；
 - source worker identity 与 transfer epoch。
 
-NIXL 负责 memory transfer，Dynamo/engine connector 负责这些 request metadata。两端必须使用相同模型、KV dtype、block size 与 layout；否则可能直接传输失败，更危险的是 bytes 能复制但 attention 以错误 stride/head 分片解释。
+NIXL 负责 memory transfer，Dynamo/engine connector 负责这些 request metadata。两端必须具有兼容的模型权重、token/position 与 KV 语义；KV dtype、block size、layout、TP 分片及所需转换必须符合具体 engine/connector 版本的契约并通过握手验证。未启用受支持的重映射/转换时，应使用相同 block size 和 layout，否则可能出现 bytes 已复制、attention 却按错误 stride/head 分片解释的问题。
+
+截至 2026-09-09 的 [vLLM NixlConnector 兼容矩阵](https://docs.vllm.ai/en/latest/features/nixl_connector_compatibility/)已列出非 HMA 配置下受限的异构 block size，以及实验性 layout 转换。这说明“物理布局始终相同”不是 NIXL 传输的普遍必要条件，但也不代表 Dynamo 会自动为 SGLang、TensorRT-LLM 或其他版本实现相同转换；各后端仍须按自己的兼容矩阵验证。
 
 同节点可以走 CUDA IPC/NVLink 等路径，跨节点通常需要 RDMA-capable fabric 与正确 device plugin/网络配置。传输 backend 的选择是 NIXL 层问题，P/D request 生命周期属于 runtime。
 

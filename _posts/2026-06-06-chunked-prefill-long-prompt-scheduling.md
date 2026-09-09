@@ -3,7 +3,7 @@ layout: post
 title: "Chunked Prefill：长 Prompt 为什么要切片执行"
 subtitle: "从 Prefill/Decode 干扰到 Token Budget 与 Stall-Free Scheduling"
 date: 2026-06-06 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -323,14 +323,16 @@ Chunked Prefill 降低的是单轮计算阻塞，不会减少整段 prompt 最�
 [ cached 6144 ][ uncached 2048 ]
 ```
 
-调度器应先把命中的完整 blocks 计入 `num_computed_tokens`，再只对未命中后缀分块。若 token budget 为 1024，可能执行两块，而不是重新切完整 8192。
+调度器应先把 cache manager 确认可复用的 token 数计入 `num_computed_tokens`，再只对未命中后缀分块。若 token budget 为 1024，可能执行两块，而不是重新切完整 8192。后缀 query 仍会读取前 6144 token 的 K/V，因此这两块的计算成本不能按独立的 2048-token prompt 估算。
 
-这要求 cache lookup、computed progress 与 chunk boundary 使用一致的 block 语义。常见边界包括：
+这要求 cache lookup、computed progress 与 chunk boundary 使用兼容的边界约定，同时区分 hash/match 单位和物理 block 大小。常见边界包括：
 
-- 只复用完整 KV blocks，尾部不足一块的 token 需要重算；
+- 经典同构 Attention 配置通常按完整物理 KV block 命中，未达到匹配边界的尾部需要重算；
 - cache key 必须包含会改变 KV 的模型或 adapter 身份；
 - position、RoPE scaling 和多模态输入 hash 必须一致；
 - prompt logprobs 可能要求对缓存 token 重新得到输出信息。
+
+截至 2026-09-09 核对的 [vLLM CacheConfig](https://docs.vllm.ai/en/latest/api/vllm/config/cache/#vllm.config.cache.CacheConfig.prefix_match_unit)允许混合模型的 `prefix_match_unit` 小于物理 block size，前提是它整除各 KV group 的 block size。实际复用还要求各组在相应边界存在可恢复状态；更细的 hash 不会自动创建 Mamba/SSM 等层的历史状态。Chunk Scheduler 应采用 cache manager 返回的有效命中进度，再满足执行端的对齐约束，不能自行用物理块大小截断或把任意 token 位置当作命中。
 
 Prefix caching 减少总 prefill 工作，chunked prefill 控制剩余工作每轮如何进入 GPU。它们互补，但分别优化“算多少”和“每次算多少”。
 
@@ -533,7 +535,7 @@ T_mixed(prefill_tokens, decode_seqs, contexts)
 
 ### Prefix Cache 与 Chunk 进度不一致
 
-表现为重复计算、position 错误或 cache block 越界。要检查命中 token 是否只按完整 blocks 计入、computed progress 是否与 slot mapping 同步，以及 cache identity 是否包含所有模型条件。
+表现为重复计算、position 错误或 cache block 越界。要检查命中 token 是否满足该版本的 `prefix_match_unit` 与各 KV group 的状态恢复边界、computed progress 是否与 slot mapping 同步，以及 cache identity 是否包含所有模型条件；不要仅凭物理 block size 判断命中是否合法。
 
 ### 请求取消后仍保留半成品
 

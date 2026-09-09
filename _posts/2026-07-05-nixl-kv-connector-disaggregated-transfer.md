@@ -3,7 +3,7 @@ layout: post
 title: "NIXL 与 KV Connector：把推理引擎和传输后端解耦"
 subtitle: "从内存注册、元数据握手到异步 P/D KV Cache 交接"
 date: 2026-07-05 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -456,7 +456,8 @@ vllm serve <model> \
 
 字段和兼容性会随版本变化，复制命令前应查看对应 release 的文档。比配置是否成功解析更重要的是：
 
-- P/D model、tokenizer、KV dtype 与 block size 相同；
+- P/D 模型权重、token/position 与 KV 语义一致，KV dtype 满足 connector 契约；
+- block size、layout 及其重映射/转换路径由所用 engine/connector 版本明确支持；未启用受支持的转换时，使用相同配置；
 - tensor/pipeline parallel 拓扑受支持；
 - 两端 rank mapping 与 network interface 正确；
 - 所需 NIXL plugin 实际加载，而非静默走慢路径；
@@ -464,6 +465,8 @@ vllm serve <model> \
 - firewall、RDMA device、IOMMU/peer access 等环境成立；
 - scheduler/router 能把 P 端 transfer parameters 带给正确 D 请求；
 - prefix cache、chunked prefill、CUDA Graph、quantization 等组合在兼容矩阵内。
+
+例如，截至 2026-09-09 的 [vLLM NixlConnector 兼容矩阵](https://docs.vllm.ai/en/latest/features/nixl_connector_compatibility/)已允许不需要 HMA 的配置在 P block size 小于 D block size 时重映射 block IDs；`LBHNC` 与 `LBNHC` 的转换则需要显式启用实验性 `enable_permute_local_kv`，且不支持 HMA。它们是该实现的受限能力，不能推广到旧版、其他 connector 或任意 P/D 组合。部署时仍要锁定版本，让 compatibility handshake 验证模型结构、attention backend、KV dtype、transfer mode 等必需匹配项，并测试实际 layout/rank 转换后的 logits。
 
 启动日志至少要打印 connector、backend、agent identity、registered bytes 和 peer discovery。仅看到 HTTP 服务可用，不能证明数据面已经走预期路径。
 
@@ -513,12 +516,21 @@ $$
 
 高 `post` latency 会阻塞 scheduler/worker thread，即使网络带宽很高也会影响每步执行；高 `xfer` latency 则可能来自 payload、网络拥塞、路径或远端 memory。
 
-还应计算：
+单笔传输 $j$ 的 payload 速率为：
 
 $$
-BW_{effective}=\frac{\text{successful payload bytes}}
-{\sum T_{xfer}}
+b_j=\frac{B_j}{T_{xfer,j}},\qquad T_{xfer,j}>0
 $$
+
+其中 $B_j$ 为该笔成功传输的有效 KV bytes，不包含协议头或重试流量。评估系统容量则使用统一 wall-clock 窗口 $(t_a,t_b]$，$t_b>t_a$：
+
+$$
+G_{payload}=\frac{B_{successful}((t_a,t_b])}{t_b-t_a}
+$$
+
+这里采用**成功完成计数口径**：分子只累计窗口内报告成功的逻辑 payload，每笔恰好计一次；跨窗口传输归入其完成的窗口。要在稳态使用足够长的窗口，或对固定 workload 从首次提交计时到最后完成并 drain，否则短窗口可能被在途请求的边界归属放大。若需要瞬时 NIC 利用率，应另看链路 byte counter，并单独区分协议、重试与有效载荷。
+
+两笔 1 GB 传输同时开始、都在 1 s 后完成，则覆盖它们的完整测量窗口得到 2 GB/s；使用 $\sum_j T_{xfer,j}=2\text{ s}$ 作分母只会得到 1 GB/s。后者是按传输时长加权的单笔平均速率，重叠时间被重复累计，不能充当聚合 goodput。对无间隔的串行成功传输，两种口径才会一致。
 
 以及真正进入关键路径的：
 

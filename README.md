@@ -30,7 +30,9 @@ bundle exec jekyll serve --livereload
 
 ```bash
 bundle exec jekyll build
+node scripts/audit-posts.mjs
 node scripts/validate-site.mjs
+bundle exec ruby scripts/validate-math.rb
 ```
 
 ## 撰写文章
@@ -51,6 +53,8 @@ tags: [LLM推理, KV Cache]
 ```
 
 文章内图片统一放在 `assets/images/`，并使用 `/assets/images/...` 引用。
+
+数学文章设置 `mathjax: true`。新写的行内公式采用 Kramdown 原生语法，例如正文中的 `$$H_{kv}$$`；独立公式将起止 `$$` 各放在一行。不要在 Markdown 正文直接写 `\(...\)` 或 `\[...\]`，这些反斜杠会被 Markdown 转义处理。原生数学节点由 Kramdown 转换为 MathJax 定界符，构建后的检查会逐式核对它们是否完整保留。浏览器是否成功加载 MathJax、公式是否正确排版仍需页面实测。
 
 标签从 `_data/tags.yml` 中选择，每篇使用 1–3 个；第一项应是最适合相关推荐的主主题。不要为仅一篇文章创建项目名标签，除非已有后续文章计划并能同步形成稳定专题。
 

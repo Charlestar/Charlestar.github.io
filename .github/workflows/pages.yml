@@ -31,11 +31,17 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
       - name: Audit post content
-        run: node scripts/audit-posts.mjs
+        run: |
+          node scripts/audit-posts.mjs
+          node scripts/reviews/2026-09-09-examples.mjs
       - name: Build site
         env:
           JEKYLL_ENV: production
         run: bundle exec jekyll build --baseurl "${{ steps.pages.outputs.base_path }}"
+      - name: Validate generated pages and math
+        run: |
+          node scripts/validate-site.mjs
+          bundle exec ruby scripts/validate-math.rb
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

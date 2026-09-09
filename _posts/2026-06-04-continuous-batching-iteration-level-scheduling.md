@@ -3,7 +3,7 @@ layout: post
 title: "Continuous Batching：为什么 Batch 可以动态变化"
 subtitle: "从请求粒度到 Iteration-Level Scheduling，理解生成式推理的批次重组"
 date: 2026-06-04 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -47,24 +47,24 @@ prompt + “KV Cache”     -> “ 是”
 prompt + “KV Cache 是”  -> ...
 ```
 
-设请求 $i$ 最终需要生成 $O_i$ 个 token。忽略推测解码等一次可提交多个 token 的机制，它至少要经历 $O_i$ 次 decode 迭代。不同请求的 $O_i$ 由停止条件、模型输出和用户参数共同决定，在执行前并不能准确知道。
+设请求 $i$ 最终产生 $O_i$ 个输出 token。本文采用普通单 token 自回归生成的计数方式：完整 prefill 的最后一个位置给出第一个输出 token 的 logits，随后还需 $D_i=\max(O_i-1,0)$ 次 decode 前向。因而输出 1 个 token 时，无需再执行一次 decode；$O_i=0$ 也没有 decode 工作，是否执行 prefill 由该请求接口决定。这里不计推测解码、多步执行、抢占重算等额外机制；若终止 EOS 实际被采样，也应计入生成步数，即使展示文本将它隐藏。[NVIDIA 对两个阶段的说明](https://developer.nvidia.com/blog/streamlining-ai-inference-performance-and-deployment-with-nvidia-tensorrt-llm-chunked-prefill/)同样把首 token 放在 prefill 之后。不同请求的 $O_i$ 由停止条件、模型输出和用户参数共同决定，在执行前并不能准确知道。
 
 现在同时到达三个请求：
 
 | 请求 | 输入长度 | 最终输出长度 | 完成所需 decode 轮数 |
 | --- | ---: | ---: | ---: |
-| A | 128 | 8 | 8 |
-| B | 256 | 64 | 64 |
-| C | 64 | 20 | 20 |
+| A | 128 | 8 | 7 |
+| B | 256 | 64 | 63 |
+| C | 64 | 20 | 19 |
 
-若执行引擎接收整个 batch 后，一直运行到三条序列全部结束才把控制权交回服务端，那么 A 在第 8 轮已经完成，却还要等 B 再运行 56 轮。第 10 轮到达的请求 D，也必须等 B 完成后才有机会进入 GPU。
+若执行引擎接收整个 batch 后，一直运行到三条序列全部结束才把控制权交回服务端，那么 A 在第 7 次 decode 后已经完成，却还要等 B 再运行 56 轮。第 10 次 decode 时到达的请求 D，也必须等 B 完成后才有机会进入 GPU。
 
 这就是固定批次的 **head-of-line blocking**：batch 的生命周期被最长请求决定，提前完成与中途到达都无法改变当前批次。
 
 可以把固定批次的占用时间粗略写成：
 
 $$
-T_{static}\approx T_{prefill}+\max_i(O_i)\cdot T_{decode}
+T_{static}\approx T_{prefill}+\max_i\bigl(\max(O_i-1,0)\bigr)\cdot T_{decode}
 $$
 
 这里的 $T_{decode}$ 会随 batch size 和上下文长度变化，因此不是常数；公式只强调一个事实：其他请求是否已经完成，不会缩短这个 batch 的生命周期。
@@ -87,11 +87,12 @@ Continuous Batching 关注的是 batch 在**执行期间**也能改变：
 ```text
 continuous batching
 
-iteration 1: [A B C]
-iteration 2: [A B C]
+prefill: [A B C] -> 各自首个 token
+decode 1: [A B C]
+decode 2: [A B C]
 ...
-iteration 8: [A B C]  -> A 完成
-iteration 9: [D B C]  -> D 加入
+decode 7: [A B C]  -> A 完成
+next step: [B C + 新到请求的 prefill] -> 在预算允许时加入
 ```
 
 两者都包含“动态”，但动态发生的边界不同。Continuous Batching 也常被称为 iteration-level batching 或 in-flight batching；这些术语在具体系统中的功能范围略有差异，核心都是在在途请求尚未全部完成时重新形成后续批次。

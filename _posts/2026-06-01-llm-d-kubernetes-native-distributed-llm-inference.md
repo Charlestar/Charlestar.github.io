@@ -3,7 +3,7 @@ layout: post
 title: "llm-d：Kubernetes 原生分布式 LLM 推理栈"
 subtitle: "沿一条请求理解智能路由、KV Cache 与 Prefill/Decode 解耦"
 date: 2026-06-01 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-inference
@@ -152,7 +152,7 @@ $$
 \widehat{T}_{decode}(e)
 $$
 
-对 endpoint \(e\)，路由器希望选取预计完成时间更低者。前缀命中减少第二项，运行请求数和队列深度影响第一项，硬件与 batch 状态同时影响三项。
+对 endpoint $$e$$，路由器希望选取预计完成时间更低者。前缀命中减少第二项，运行请求数和队列深度影响第一项，硬件与 batch 状态同时影响三项。
 
 llm-d 的默认路径可以组合 prefix-aware 与 load-aware scorer；更进一步的 latency predictor 会基于在线数据预测 TTFT/ITL。无论采用启发式还是预测模型，都应避免让热门前缀把全部请求吸到同一 Pod，形成 cache locality 与排队热点之间的反转。
 
@@ -225,13 +225,13 @@ CPU RAM
 local NVMe or shared filesystem
 ```
 
-请求再次出现时，系统比较两种代价：从慢层拉回 KV，还是重新计算前缀。设需要恢复的 KV 大小为 \(S_{kv}\)，有效传输带宽为 \(B\)，固定 I/O 开销为 \(L\)：
+请求再次出现时，系统比较两种代价：从慢层拉回 KV，还是重新计算前缀。设需要恢复的 KV 大小为 $$S_{kv}$$，有效传输带宽为 $$B$$，固定 I/O 开销为 $$L$$：
 
 $$
 T_{restore}\approx L+\frac{S_{kv}}{B}
 $$
 
-只有当 \(T_{restore}<T_{recompute}\) 时，命中慢层才有性能意义。远端存储提供更大容量、跨副本共享和重启后保留，但网络拥塞、随机 I/O 与并行请求可能使恢复变慢。
+只有当 $$T_{restore}<T_{recompute}$$ 时，命中慢层才有性能意义。远端存储提供更大容量、跨副本共享和重启后保留，但网络拥塞、随机 I/O 与并行请求可能使恢复变慢。
 
 当前 well-lit path 中，vLLM 可通过 `OffloadingConnector` 使用 HBM → CPU → filesystem 层级，SGLang 可使用 HiCache。EPP 的全局索引负责知道 block 在哪里，实际数据读写仍由模型服务器及其 connector 完成。索引不是存放 KV tensor 的数据库。
 
@@ -246,7 +246,7 @@ $$
 
 共置执行时，长 prefill 可能与正在 decode 的请求争用 GPU，造成 inter-token latency 抖动。P/D 解耦让两类 worker 分别扩缩容、选择并行度与 kernel，并避免长 prompt 直接干扰 decode 池。
 
-但拆开后必须支付 KV 转移成本。若模型有 \(L\) 层、每 token KV 元素数为 \(d_{kv}\)、数据类型为 \(b\) bytes，长度 \(s\) 的 prompt 所需 KV 规模可粗略表示为：
+但拆开后必须支付 KV 转移成本。若模型有 $$L$$ 层、每 token KV 元素数为 $$d_{kv}$$、数据类型为 $$b$$ bytes，长度 $$s$$ 的 prompt 所需 KV 规模可粗略表示为：
 
 $$
 S_{kv}\approx 2Lsd_{kv}b
@@ -357,7 +357,7 @@ $$
 T_{ready}=T_{schedule}+T_{image}+T_{weight\ load}+T_{compile/warmup}
 $$
 
-若流量尖峰持续时间短于 \(T_{ready}\)，事后扩容很难救场，需要预热副本、预测扩容或入口限流。
+若流量尖峰持续时间短于 $$T_{ready}$$，事后扩容很难救场，需要预热副本、预测扩容或入口限流。
 
 缩容同样危险。直接删除持有热门 KV 的 Pod，不仅减少容量，还会让后续请求重算前缀。滚动升级和 scale-down 策略应考虑 cache value 与正在进行的 streaming request，而不只是 replica count。
 

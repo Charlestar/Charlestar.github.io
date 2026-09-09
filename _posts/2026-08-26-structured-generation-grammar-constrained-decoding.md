@@ -3,7 +3,7 @@ layout: post
 title: "结构化生成：Grammar 怎样约束每一个 Token"
 subtitle: "从 JSON Schema、Regex 与 CFG 到 Token Mask，理解 Constrained Decoding 的正确性与性能边界"
 date: 2026-08-26 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: model-serving-agents
@@ -59,7 +59,7 @@ Grammar 保证可解析、符合结构
 
 提示词会改变模型的概率分布，但不会把非法 Token 的概率严格变成零。
 
-对于输出前缀 \(x_{<t}\)，普通自回归解码在词表 \(V\) 上计算：
+对于输出前缀 $$x_{<t}$$，普通自回归解码在词表 $$V$$ 上计算：
 
 $$
 p(v \mid x_{<t}), \qquad v \in V
@@ -78,9 +78,9 @@ Constrained Decoding 的关键变化，是把结构规则放进采样路径本�
 
 ## 3. 目标不是一个模板，而是一门语言
 
-结构化输出可以统一描述为：只允许模型生成属于某个语言 \(L\) 的字符串。
+结构化输出可以统一描述为：只允许模型生成属于某个语言 $$L$$ 的字符串。
 
-不同接口只是描述 \(L\) 的方式不同：
+不同接口只是描述 $$L$$ 的方式不同：
 
 | 接口 | 适合表达什么 | 典型实现 |
 | --- | --- | --- |
@@ -133,7 +133,7 @@ ORD-[0-9]{8}
 6. 重复，直到接受 EOS 或到达终态
 ```
 
-令当前 Grammar 状态下允许的 Token 集合为 \(A_t\)，屏蔽后的分布为：
+令当前 Grammar 状态下允许的 Token 集合为 $$A_t$$，屏蔽后的分布为：
 
 $$
 p'(v \mid x_{<t}) =
@@ -515,7 +515,7 @@ Tool Calling 通常包含两部分：选择工具，以及生成符合该工具�
 - Schema 本身描述了空语言；
 - 强制 Stop String 与合法终态冲突。
 
-当 \(A_t = \varnothing\) 时，绝不能移除 Grammar Mask 后“随便采一个”。那会把明确的正确性失败伪装成成功。
+当 $$A_t = \varnothing$$ 时，绝不能移除 Grammar Mask 后“随便采一个”。那会把明确的正确性失败伪装成成功。
 
 服务应终止该序列，并返回可区分、可观察的错误，例如：
 

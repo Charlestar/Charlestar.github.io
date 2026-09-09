@@ -3,7 +3,7 @@ layout: post
 title: "DistServe：为什么 Prefill 与 Decode 要分开配置"
 subtitle: "从阶段干扰、每 GPU Goodput 到带宽感知 Placement"
 date: 2026-06-29 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-inference
@@ -40,19 +40,19 @@ $$
 =\frac{t_N-t_1}{N-1}
 $$
 
-也有系统记录逐 token Inter-Token Latency 并观察 P90/P99。无论具体口径，目标都是约束 decode 流畅度。
+该平均值只对 $N>1$ 定义；仅输出一个 token 的请求应把 TPOT 记为不适用，不能做除零运算或当作零延迟样本混入平均值。也有系统记录逐 token Inter-Token Latency 并观察 P90/P99。无论具体口径，目标都是约束 decode 流畅度。
 
 两个阶段对应关系大致是：
 
 ```text
 request arrives
-      │ queue + prefill + first sampling
+      │ TTFT: queue + prefill + first sampling
       ├────────────────────────────────► first token
       │                                     │
       │                            decode steps / TPOT
       │                                     ▼
-      └────────────────────────────────► remaining tokens
-             TTFT
+      └────────────────────────────────► last token
+             E2E latency
 ```
 
 不同应用对两者的容忍度不同。对话希望快速开始响应；批量摘要可能更关心整段生成完成速度；代码补全对首 token 和持续生成都可能敏感。系统不能用一个 tokens/s 数字表达所有服务质量。

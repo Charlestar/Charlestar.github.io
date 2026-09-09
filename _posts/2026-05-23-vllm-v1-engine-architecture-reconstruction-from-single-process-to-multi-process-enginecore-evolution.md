@@ -3,7 +3,7 @@ layout: post
 title: "vLLM V1 EngineCore：引擎进程与执行核心的解耦"
 subtitle: "沿一次请求理解 Client、Scheduler、KV Cache 与 GPU Worker"
 date: 2026-05-23 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: serving-scheduling
@@ -272,7 +272,7 @@ $P$ 剩下 778 prompt token 留给下一轮。这就是 chunked prefill 与 deco
 
 ## Prefix caching 发生在调度与 cache manager 之间
 
-Automatic Prefix Caching 把完整 KV block 与其 token 内容、父块和相关配置组合成 hash。新请求进入时，KVCacheManager 查找连续命中的 blocks：
+先以经典同构 Attention 配置为例：Automatic Prefix Caching 在与物理 KV block 对齐的边界上，把 token 内容、父级 hash 和相关配置组合成缓存键。新请求进入时，KVCacheManager 查找连续命中的前缀：
 
 ```text
 prompt blocks: [A][B][C][D]
@@ -285,10 +285,12 @@ need compute:        [C][D]
 这并不等于文本相同就一定命中：
 
 - tokenization 必须一致；
-- 复用以完整 block 为单位；
+- 在上述经典配置中，命中按完整 block 对齐；
 - LoRA、cache salt、多模态 hash 等会进入身份；
 - block 可能已经被 eviction；
 - 请求若需要 prompt logprobs，当前 V1 行为可能为得到 logprobs 而重算完整 prompt。
+
+这里需要区分**前缀匹配粒度**和**物理存储粒度**。截至 2026-09-09 核对的 [vLLM CacheConfig 文档](https://docs.vllm.ai/en/latest/api/vllm/config/cache/#vllm.config.cache.CacheConfig.prefix_match_unit)中，`prefix_match_unit` 可细于物理 KV block，例如以 32 token 为匹配单位，在 1024-token 的混合模型物理块内部确定命中边界，但要求各 KV group 的 block size 可被该单位整除。它只控制匹配粒度，不决定状态保存频率；最终可复用长度还取决于各 KV group 是否能恢复相应状态。因此不能把“完整物理块”推广为所有 V1 模型的命中边界，也不能理解成任意 token 位置都可复用。
 
 监控时除了 request hit rate，还要统计实际跳过的 token 数。一个只命中很短 block 的请求，与复用 100K prompt 的请求，价值完全不同。
 

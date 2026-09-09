@@ -3,7 +3,7 @@ layout: post
 title: "Multi-LoRA Serving：一份 Base Model 怎样服务不同 Adapter"
 subtitle: "从低秩增量、异构批处理到 Adapter Cache，理解多租户推理的计算与隔离边界"
 date: 2026-08-21 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: model-serving-agents
@@ -299,7 +299,7 @@ $$
 mark old slot draining
   → stop assigning new requests
   → wait for active references to reach zero
-  → invalidate related graphs/cache entries
+  → invalidate old content-cache mappings; check graph compatibility
   → load and verify new immutable revision
   → atomically publish new slot mapping
 ```
@@ -344,6 +344,10 @@ multimodal input identity if present
 只使用可变名称 `customer-support/latest` 不安全：当 alias 指向新 revision 时，旧 KV blocks 仍可能命中。请求进入系统时应把 alias 解析成 immutable Adapter revision，并让整个请求生命周期保持不变。
 
 如果 Adapter 只作用于非常靠后的模块，理论上某些更早层的中间结果可能复用，但这需要 layer-aware cache contract；普通 KV Cache 包含各 Attention layer 的状态，默认应把 Adapter revision 纳入身份。
+
+CUDA Graph 则缓存执行拓扑与参数地址，不能与 KV 内容缓存使用同一套等价关系。若 Adapter 权重装入固定地址的 slots，rank/shape 与 kernel 路径兼容，且每轮 replay 前正确更新 token→slot 映射和输入缓冲区，多个 Adapter 可以复用同一张图。以 [vLLM v0.25.0 的 `BatchExecutionDescriptor`](https://docs.vllm.ai/en/v0.25.0/api/vllm/v1/worker/gpu/cudagraph_utils/#vllm.v1.worker.gpu.cudagraph_utils.BatchExecutionDescriptor) 为例，图选择包含 graph mode、token/request 数、uniform token count 和 active LoRA 数量，并没有把具体 Adapter ID 作为字段。[PyTorch CUDA Graph 文档](https://docs.pytorch.org/docs/main/notes/cuda.html#cuda-graphs)也说明，保持相同地址的静态输入缓冲区可在 replay 前写入新的内容。
+
+因此，替换 Adapter revision 要更新其内容身份与 slot generation，并保证旧的在途执行已经结束；是否需要重新 capture，取决于图的地址、shape、rank 支持与执行路径是否仍兼容。若某实现把具体 Adapter 选择或专用权重指针静态固化进图，才需要相应区分身份、更新图或重新 capture，不能要求所有实现逐 Adapter 建图。
 
 ## Tensor Parallel 下 LoRA 怎样切
 
@@ -507,7 +511,7 @@ Multi-LoRA Serving 把一份共享 Base Model 变成许多逻辑模型，但系�
 4. 不同 ranks、target modules、fused weights、TP 和量化会改变 Adapter layout；
 5. Host/GPU 分层 cache 解决容量，reference count 与 immutable revision 保证热更新安全；
 6. 调度器要在 Adapter locality、Continuous Batching、deadline 和公平性之间取舍；
-7. Prefix/KV Cache、CUDA Graph 与所有运行时缓存都要包含 Adapter identity；
+7. Prefix/KV 等内容缓存应区分 Adapter revision；CUDA Graph 按执行拓扑、shape、地址与 LoRA 模式的兼容条件复用，运行时映射必须正确更新；
 8. 动态加载属于控制面安全边界，不能让普通请求直接加载任意路径；
 9. 验收必须覆盖混批、冷加载、eviction、TP 与多步 Decode，而不只是单 Adapter demo。
 

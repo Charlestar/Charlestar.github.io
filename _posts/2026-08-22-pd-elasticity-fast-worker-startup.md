@@ -3,7 +3,7 @@ layout: post
 title: "P/D 弹性：扩容决定发出后，GPU 为什么还不能接请求"
 subtitle: "从 SLO 控制环、权重分发与编译缓存到 Worker Ready Gate，拆解分离式推理的容量生效时间"
 date: 2026-08-22 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-inference
@@ -15,7 +15,7 @@ tags: [分布式推理, 分离式推理, Kubernetes]
 
 Prefill/Decode 分离之后，两个阶段终于可以独立扩容：输入突然变长就增加 Prefill Worker，输出变长或并发升高就增加 Decode Worker。这个控制思路很自然，却隐藏了一个决定线上效果的时间差。
 
-控制器在时刻 \(t\) 把副本数从 4 改成 6，并不代表时刻 \(t\) 已经多出两份服务能力。新实例还要获得 GPU、拉取镜像、装载数十到数百 GB 权重、建立并行通信组、编译 Kernel、捕获 CUDA Graph、规划 KV Cache，最后通过正确性与健康检查，才可以进入 Router 的候选集合。
+控制器在时刻 $$t$$ 把副本数从 4 改成 6，并不代表时刻 $$t$$ 已经多出两份服务能力。新实例还要获得 GPU、拉取镜像、装载数十到数百 GB 权重、建立并行通信组、编译 Kernel、捕获 CUDA Graph、规划 KV Cache，最后通过正确性与健康检查，才可以进入 Router 的候选集合。
 
 如果整段流程要几分钟，而一次流量峰值只持续几十秒，扩容可能在拥塞结束后才生效。此时 Autoscaler 的指标与公式即使完全正确，也无法挽回已经发生的 TTFT/TPOT 违约。
 
@@ -52,7 +52,7 @@ $$
 
 ## 2. 为什么固定 xPyD 组会浪费资源
 
-早期 P/D 部署常把 \(x\) 个 Prefill 与 \(y\) 个 Decode Worker 绑定成一个服务组：
+早期 P/D 部署常把 $$x$$ 个 Prefill 与 $$y$$ 个 Decode Worker 绑定成一个服务组：
 
 ```text
 group 0: P0, P1 → D0, D1, D2, D3
@@ -140,14 +140,14 @@ D predicted work
 
 ## 5. 控制器真正需要预测多远
 
-若新 Worker 从创建到 Ready 需要 \(T_{ready}\)，控制器至少要预测这个时间范围内的容量：
+若新 Worker 从创建到 Ready 需要 $$T_{ready}$$，控制器至少要预测这个时间范围内的容量：
 
 $$
 C_{desired}(t)
 =f\bigl(W[t,t+T_{ready}], SLO, headroom\bigr)
 $$
 
-当 \(T_{ready}=180s\) 时，只看最近 10 秒 Queue Length 是不够的。扩容决策必须更早发出，或者长期维持足以覆盖这 180 秒的 Warm Capacity。
+当 $$T_{ready}=180s$$ 时，只看最近 10 秒 Queue Length 是不够的。扩容决策必须更早发出，或者长期维持足以覆盖这 180 秒的 Warm Capacity。
 
 降低 `T_ready` 会直接改善弹性：
 
@@ -202,7 +202,7 @@ host memory
 GPU HBM
 ```
 
-若模型大小为 \(M\)，路径中可持续带宽最小值为 \(B_{min}\)，忽略其他开销时有下界：
+若模型大小为 $$M$$，路径中可持续带宽最小值为 $$B_{min}$$，忽略其他开销时有下界：
 
 $$
 T_{weight}\ge\frac{M}{B_{min}}
@@ -298,7 +298,7 @@ read shard i
   → release staging buffer
 ```
 
-双缓冲可以让读取第 \(i+1\) 块与第 \(i\) 块 H2D 重叠，但 Buffer 数量和并发必须受内存预算控制。流式加载优化的是峰值与重叠，不会绕过路径带宽下界。
+双缓冲可以让读取第 $$i+1$$ 块与第 $$i$$ 块 H2D 重叠，但 Buffer 数量和并发必须受内存预算控制。流式加载优化的是峰值与重叠，不会绕过路径带宽下界。
 
 ## 12. 编译缓存与权重缓存必须分开管理
 
