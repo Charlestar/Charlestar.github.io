@@ -3,7 +3,7 @@ layout: post
 title: "Sequence Parallel 与 Context Parallel：Token 维到底怎样切"
 subtitle: "从 LayerNorm Activation 分片到跨卡 Attention，厘清 SP、CP、Ring 与 All-to-All 的边界"
 date: 2026-08-14 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-training
@@ -127,7 +127,7 @@ Backward 按相反方向恢复 tensor placement。Forward 的 AllGather 对应 B
 - 可能是对同一 token range 的 partial sums；
 - 也可能是错误地重复保存同一段 tokens。
 
-因此日志和 API 不能只记录 shape，还要记录 `global_offset`、shard dimension、是否 partial 以及所属 process group。
+因此日志和 API 不能只记录 shape，还要记录 global token 映射（连续分片可简写为 `global_offset`）、shard dimension、是否 partial 以及所属 process group。
 
 ## SP 为什么没有解决长上下文 Attention
 
@@ -201,6 +201,8 @@ $$
 O=\frac{u}{l}
 $$
 
+这些统计量都按 Query row 独立维护。初始化为 $m=-\infty,l=0,u=0$；若某个 KV block 对该 row 完全被 mask，应直接跳过，不能先对一整行 $-\infty$ 做减最大值，否则 $-\infty-(-\infty)$ 会产生 NaN。首个有效 block 可以直接初始化 running state，之后再应用上述合并式；最终只有 $l>0$ 的 row 才能计算 $u/l$。若一个 row 完全没有合法 Key，必须走 attention backend 约定的空行处理，不能无条件除以零。这是 online softmax 在 causal/padding mask 下的数值边界，不改变合法位置上的 attention 定义。
+
 这样无需 materialize 完整 attention matrix，也无需在单卡保存完整 KV。P2P 传输能否隐藏，取决于每个 local attention block 的计算时间是否足以覆盖下一块 KV 的通信。
 
 ## All-to-All：在 Sequence 与 Head 维之间转置
@@ -250,13 +252,13 @@ Sequence sharding 后至少有三类隐式状态需要显式化。
 
 ### Global Position
 
-Rank $r$ 的第 $j$ 个本地 token 对应：
+只有 Rank $r$ 持有一段连续 token 时，第 $j$ 个本地 token 才能写成：
 
 $$
 position=offset_r+j
 $$
 
-若使用 packed sequences，offset 还要结合每个 sample 的 segment boundaries，而不是只看物理 tensor 下标。
+若采用前文的首尾配对或其他非连续分片，应使用显式映射 $position=index\_map_r[j]$。例如全局位置 `0..7` 中，某 rank 持有 `[0,1,6,7]`，单个 `offset_r+j` 无法表示后半段。若使用 packed sequences，还要由 segment ID 与边界得到样本内的 position IDs；物理全局下标、样本内 RoPE 位置和 causal 可见性不能混为同一整数。
 
 ### Attention Mask
 
@@ -422,7 +424,7 @@ SP 的价值在于缩短完整 activation 的驻留区间，并让 LayerNorm、d
 
 ### “Local Token Index 就是 Position ID”
 
-Sequence shard 的本地下标必须加 global offset，并处理 packed segment boundaries，否则 RoPE 与 causal mask 都会错误。
+Sequence shard 的本地下标必须先映射到真实 global token，再结合 packed segment boundaries 生成位置与 mask。只有连续分片才能简化为加一个 global offset。
 
 ### “CP Size 越大，能支持的上下文越长，性能也越好”
 

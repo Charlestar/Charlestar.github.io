@@ -145,7 +145,16 @@ $$
 -\log\frac{\pi_{ref}(a_t\mid s_t)}{\pi_\theta(a_t\mid s_t)}-1
 $$
 
-这个估计量与有符号的 $\ell_t$ 不能互换。两条路径都依赖 reference log-prob，但 shaping 的位置和优化目标不同。现在再看 old 与 reference 的职责：
+这里的“KL 估计”还依赖采样分布。固定状态 $s$，令 $p=\pi_\theta(\cdot\mid s)$、$q=\pi_{ref}(\cdot\mid s)$，并假设两者在同一支持集上严格为正，则：
+
+$$
+\mathbb E_{a\sim p}\left[\frac{q(a)}{p(a)}-\log\frac{q(a)}{p(a)}-1\right]
+=D_{KL}(p\Vert q)
+$$
+
+因为第一项的期望为 $\sum_a q(a)=1$。但 rollout 来自 $\pi_{old}$，多轮更新后一般已有 $\pi_\theta\ne\pi_{old}$，此时直接在旧样本上取平均，不再严格无偏估计当前策略的这个 KL。固定状态下可以用 $p/\pi_{old}$ 做 importance weighting 来恢复上述期望，前提是支持集覆盖；这又不等于自动修复整条轨迹的状态分布或得到相同的梯度估计。原始 [DeepSeekMath §4.1.1、Algorithm 1](https://arxiv.org/html/2402.03300v3#S4.SS1.SSS1)把该项用于旧 rollout 上的 GRPO surrogate，理解原算法时应保留这层区别，不擅自把它改成另一种 loss。
+
+这个非负估计量与有符号的 $\ell_t$ 不能互换。两条路径都依赖 reference log-prob，但 shaping 的位置和优化目标不同。现在再看 old 与 reference 的职责：
 
 - old log-prob 回答“这条 action 当时有多大概率被采到”；
 - reference log-prob 回答“当前行为离约束策略有多远”。
@@ -298,6 +307,8 @@ $$
 
 在文本 episode 中，prompt tokens 通常不作为 policy actions，padding 更不能参与 value loss。自然 EOS 或环境终止通常令 $d_t=1$；仅因 `max_new_tokens`、超时或资源上限而截断时，往往仍需对可继续状态做价值续估。若统一把所有最后位置当 terminal，长输出的 return 就可能被系统截断策略悄悄改变。
 
+价值续估与 GAE trace 的延续也要分开：若轨迹在最后一个已观测 action $T$ 截断，可以保留 $V(s_{T+1})$ 来计算 $\delta_T$，但未观测的 $A_{T+1}$ 应在这一段的递推中设为 0。不能因为 $d_T=0$，就把 packing 中下一条独立 response 的 advantage 接到当前轨迹后面。
+
 Critic update 与 Actor update 可以使用不同 micro-batch size，因为二者模型大小和 activation pressure 不同。但它们必须消费同一个 experience manifest，不能在 shuffle 后丢失 sample/token 对齐。
 
 ## 阶段七：PPO Actor Update 实际读取哪些字段
@@ -420,18 +431,19 @@ Actor 到 Rollout 的更新因此不是简单 `state_dict` 复制，而是 logic
 
 HybridFlow 的 3D-HybridEngine 展示了一种做法：训练和生成在同一组设备上使用不同并行组，通过参数重分片切换阶段。verl 也把 trainer-to-rollout update 视为显式的 engine/checkpoint transfer 阶段，而不是普通的 `state_dict` 复制；具体 worker 与 sharding-manager 名称在不同版本间已有变化，因此部署文档还应固定框架版本或源码 commit。无论框架名称如何，正确性条件相同：Rollout version 的每个 logical tensor 都必须来自同一个 committed Actor version。
 
-## 参数、Optimizer、KV 与 Experience 有四种不同生命周期
+## 参数、Optimizer、Gradient、KV 与 Experience 的生命周期
 
 把显存里所有东西都叫“模型状态”，容易导致错误的 offload 与恢复策略：
 
 | 状态 | 典型生命周期 | 是否跨 iteration | 版本依赖 |
 | --- | --- | --- | --- |
 | Actor parameters | 多个 optimizer steps | 是 | current policy version |
-| Optimizer/gradient states | 训练 run | 是 | Actor shard/layout 与 step |
+| Optimizer moments/master states | 训练 run | 是 | Actor shard/layout 与 step |
+| Accumulated gradients | 本次 optimizer step 的若干 micro-batches | 通常不跨已完成的 step | 本次 loss、参数版本与累积进度 |
 | Rollout KV Cache | 单次请求或共享 prefix | 通常否 | 精确绑定 rollout policy version |
 | Experience batch | rollout 到若干 update epochs | 短期 | old/ref/reward versions |
 
-Reference、Reward、Critic 又各有独立参数生命周期。Checkpoint 若只保存 Actor weights，却没有保存 optimizer step、reference/reward version、prompt cursor 和尚未消费的 experience 状态，只能恢复“一个模型文件”，不能保证从同一 RL iteration 继续。
+Gradient buffer 的显存可以长期复用，但其有效梯度值通常在每次 step 的累积边界清零或置空，不能因此把它当成跨 step 保留的 optimizer moments。只有从累积中途恢复时，才必须额外保存未消费梯度和 micro-batch 进度。Reference、Reward、Critic 又各有独立参数生命周期。Checkpoint 若只保存 Actor weights，却没有保存 optimizer step、reference/reward version、prompt cursor 和尚未消费的 experience 状态，只能恢复“一个模型文件”，不能保证从同一 RL iteration 继续。
 
 ## 角色映射：Colocate、Standalone 与 Hybrid 没有固定赢家
 

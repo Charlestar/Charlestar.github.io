@@ -392,13 +392,15 @@ reduced gradient shard B/p
   → local optimizer update
 ```
 
-上图对应 PyTorch FSDP `FULL_SHARD`、ZeRO-3 一类“forward 后立即释放完整参数”的典型生命周期。忽略预取、重计算和共享参数等额外因素，两个 AllGather 加一个 ReduceScatter 的理想每-rank 线上发送量为：
+上图对应 PyTorch FSDP `FULL_SHARD`、ZeRO-3 一类“forward 后立即释放完整参数”的典型生命周期。忽略预取、重计算和共享参数等额外因素，只有完整参数与完整梯度在各自通信 dtype 下都占 $B$ 字节时，两个 AllGather 加一个 ReduceScatter 的理想每-rank 线上发送量才简化为：
 
 $$
 3\frac{p-1}{p}B
 $$
 
-若配置选择在 forward 后保留完整参数直到 backward 完成，就只需一个 AllGather 和一个 ReduceScatter，通信量才是 $2(p-1)B/p$，与 Ring AllReduce 的理想量级相同；代价是完整参数驻留更久、峰值显存更高。FSDP 的目标不是凭空消除通信，而是在通信量和显存之间选择生命周期，并把 parameters、gradients、optimizer states 的长期 ownership 保持为 sharded。
+更一般地，令 $B_{param}$、$B_{grad}$ 分别表示通信中完整参数、完整梯度的字节数，发送量是 $(p-1)(2B_{param}+B_{grad})/p$。例如参数以 BF16 AllGather、梯度以 FP32 ReduceScatter 时，不能把同一个 $B$ 代入三次；[FSDP2 MixedPrecisionPolicy](https://docs.pytorch.org/docs/main/distributed.fsdp.fully_shard.html#torch.distributed.fsdp.MixedPrecisionPolicy)分别控制 `param_dtype` 与 `reduce_dtype`。
+
+若配置选择在 forward 后保留完整参数直到 backward 完成，就只需一个 AllGather 和一个 ReduceScatter，发送量为 $(p-1)(B_{param}+B_{grad})/p$；在两者都等于 $B$ 时才化为 $2(p-1)B/p$，与 Ring AllReduce 的理想量级相同。代价是完整参数驻留更久、峰值显存更高。FSDP 的目标不是凭空消除通信，而是在通信量和显存之间选择生命周期，并把 parameters、gradients、optimizer states 的长期 ownership 保持为 sharded。
 
 ## Tensor Parallel：Partial Output 为什么需要求和
 
@@ -451,15 +453,17 @@ Context Parallel 把输入 sequence 长期切在多个 ranks 上，但 Attention
 
 因此 CP 的正确抽象是“为全局 Attention 建立所需的数据依赖”，不是“CP 等于某一个 collective”。选择方案时要同时比较 K/V bytes、临时显存、causal load balance、通信是否能与 attention tile 计算重叠。
 
-## Expert Parallel：All-to-All 搬运的是 Assignment
+## Expert Parallel：从 Assignment 到实际传输布局
 
-在 MoE 中，router 为每个 token 选出 Top-$k$ experts。若一共有 $N_t$ 个 tokens，则通信工作单位通常是：
+在 MoE 中，router 为每个 token 选出 Top-$k$ experts。若一共有 $N_t$ 个 tokens，且每条路由均保留，则逻辑路由数是：
 
 $$
 N_a=N_t\times k
 $$
 
-个 expert assignments，而不是 $N_t$ 个原始 tokens。dispatch All-to-All 把 hidden states 发到 expert owners；expert 计算完成后，combine All-to-All 把结果送回原 token owner。
+个 expert assignments，而不是 $N_t$ 个原始 tokens。但逻辑路由数不等于实际跨卡发送的 hidden-state 行数：多个目标 experts 在同一个 rank 时，dispatcher 可以只传一份 token，再在目标 rank 展开；本地 expert 也不需要跨卡传输。比如一个 token 的 Top-3 都在同一个远端 rank，朴素 expert-expanded 路径会发三行，按目标 rank 去重则只发一行。[DeepEP ElasticHandle](https://github.com/deepseek-ai/DeepEP/blob/main/deep_ep/buffers/elastic.py)明确区分了按 rank 去重的 token counts 与按 expert 展开并对齐的 counts。
+
+dispatch 把所需 hidden states 交给 expert owners；expert 计算完成后，combine 把输出贡献送回原 token owner。传输字节应由实际 layout 的 peer counts、dtype、对齐和 metadata 求和，不能直接用 $N_tkH$ 代替所有实现的网络流量。
 
 ```text
 source-token layout
@@ -708,6 +712,8 @@ imbalance
 =\frac{\max_j\sum_i c_{ij}}
 {\frac{1}{p}\sum_j\sum_i c_{ij}}
 $$
+
+这里要求总 count 大于 0，且 $c_{ij}$ 使用一致的实际传输行或 assignment 口径。全零通信轮应记录为 `N/A/no traffic`，而不是计算 $0/0$ 或把它当成完全均衡；按目标 rank 去重后的通信均衡，也不等于各 expert 的计算均衡。
 
 以及：
 

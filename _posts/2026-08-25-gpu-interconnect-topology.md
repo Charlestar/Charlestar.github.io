@@ -511,18 +511,18 @@ Data Parallel、Expert Parallel 往往更容易跨 scale-out 边界，Tensor Par
 
 ### Per-link bandwidth：一条链路、一个方向
 
-最基础的口径是单条物理 link 在某一方向的速率。对 lane-based interconnect，可抽象为：
+最基础的口径是单条物理 link 在某一方向的速率。对 lane-based interconnect，若 $R_{\text{lane}}$ 使用单 lane、单向的原始 bit/s，$B$ 使用 byte/s，可抽象为：
 
 $$
 B_{\text{link,payload}}
 \le
-R_{\text{lane}}
+\frac{R_{\text{lane}}}{8}
 \times N_{\text{lane}}
 \times \eta_{\text{encoding}}
 \times \eta_{\text{protocol}}
 $$
 
-其中 line rate、编码效率和协议开销不是应用 payload。若厂商写“bidirectional aggregate”，还可能把两个方向相加。比较前必须统一：
+其中 $1/8$ 是 bit 到 byte 的换算，编码与协议效率再扣除非 payload 的部分。若输入已经是扣除编码后的 bit rate，就不能再次扣同一开销；GT/s 或 symbol/s 也不能在未解释调制/编码口径时直接当作 bit/s。若厂商写“bidirectional aggregate”，还可能把两个方向相加。比较前必须统一：
 
 - bit/s 还是 byte/s；
 - GB/s 还是 GiB/s；
@@ -1447,7 +1447,7 @@ physical topology supplies capacity, latency and failure domain
 4. local NIC 按 GPU A<->NIC A 的合格 peer path 读取数据
 5. NIC 将 payload 分组并从指定 port/rail 发出
 6. InfiniBand 或 RoCE fabric 按当前 route 穿过交换网络
-7. remote NIC 收包并按 transport 语义完成远端写入
+7. remote NIC 收包并按 transport 语义向目标 buffer 发起 DMA 写入
 8. NIC B<->GPU B 的 peer path 把 payload 写入 GPU B memory
 9. completion 通过受支持的同步机制进入 GPU B 的执行依赖
 10. consumer kernel 在结果完整、可见后开始读取

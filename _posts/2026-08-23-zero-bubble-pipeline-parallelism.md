@@ -3,7 +3,7 @@ layout: post
 title: "Zero-Bubble Pipeline Parallel：为什么 Weight Gradient 可以延后计算"
 subtitle: "从 Backward 依赖拆分、显存生命周期到优化器版本边界，理解接近零气泡的同步流水线"
 date: 2026-08-23 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-training
@@ -90,7 +90,7 @@ B(i,j) -> W(i,j)       for every stage i
 
 容易产生的一种误解是：既然 W 被推迟，模型是不是在使用不完整梯度或 stale weights？答案是否定的。Zero-Bubble 调整的是**同一个同步迭代内部的执行顺序**，而不是把某些 micro-batches 推到不同参数版本。
 
-对 iteration $k$，至少要维持以下语义：
+先以不启用 speculative optimizer post-validation 的同步执行为例，对 iteration $k$ 至少要维持以下语义：
 
 ```text
 所有 F(*, k) 读取参数 theta_k
@@ -99,6 +99,8 @@ B(i,j) -> W(i,j)       for every stage i
 optimizer 使用完整且正确同步的 g_k 产生 theta_(k+1)
 iteration k+1 的 F 只能读取已提交的 theta_(k+1)
 ```
+
+后文的 post-validation 允许在受控协议下暂时使用 provisional 参数，但这些计算还不是已提交结果；验证失败必须撤销相应更新与依赖计算。它改变了物理执行时点，不放宽最终提交轨迹的同步语义。
 
 W 可以晚于本 micro-batch 的 B，却不能晚于使用其梯度的 optimizer step。更不能让 stage 先覆盖 $\theta_k$，再用 $\theta_{k+1}$ 去计算属于旧 forward 的 B。后者会改变链式求导使用的 Jacobian，已经不是一次合法的同步训练重排。
 
@@ -541,7 +543,7 @@ each stage validates its previous action against full global state
 - optimizer timestamp $t$；
 - 可能还有 master weights、loss scale 和 scheduler state。
 
-原论文给出 AdamW 的 in-place arithmetic rollback：根据当前 $m,v,\theta,t$ 与本轮 gradient 逆推出更新前状态，避免额外保存完整历史副本。它是实数代数上的逆公式；浮点舍入、fused update、mixed-precision master state 或不同 kernel 次序都可能让回滚无法逐位恢复。这个技巧依赖 optimizer update 的具体代数形式，并且只有在数值和状态覆盖都经过验证后才安全。论文中的吞吐与确定性实验也不能替代崩溃一致性、反复 rollback 和长时间训练验证。
+原论文给出 AdamW 的 in-place arithmetic rollback：根据当前 $m,v,\theta,t$ 与本轮 gradient 逆推出更新前状态，避免额外保存完整历史副本。它是实数代数上的逆公式，而且附录 C 的除法要求 $\beta_1,\beta_2\ne0$ 以及 $1-\gamma\lambda\ne0$，其中 $\gamma$ 是学习率、$\lambda$ 是 weight decay；即使正向 optimizer 接受某个边界参数，也不代表逆公式仍存在。浮点舍入、fused update、mixed-precision master state 或不同 kernel 次序都可能让回滚无法逐位恢复。这个技巧依赖 optimizer update 的具体代数形式，并且只有在数值和状态覆盖都经过验证后才安全。论文中的吞吐与确定性实验也不能替代崩溃一致性、反复 rollback 和长时间训练验证。
 
 工程上不应把它泛化为“所有 optimizer 都能回滚”。包含随机操作、非可逆量化、稀疏状态创建、外部 fused optimizer side effect 或参数异步 offload 的实现，可能无法仅靠逆公式恢复。更保守的实现可以保留 pre-step snapshot 或直接保留同步 barrier，以吞吐换简单、可审计的提交语义。
 

@@ -3,7 +3,7 @@ layout: post
 title: "Distributed Checkpoint：怎样保存并重分片多维训练状态"
 subtitle: "从 Sharded State Dict、两阶段提交到异步 I/O，构建真正可恢复的训练快照"
 date: 2026-08-17 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: distributed-training
@@ -246,7 +246,7 @@ T_{train}
 +T_{finalize}
 $$
 
-异步保存希望把较慢的 $T_{storage}$ 与后续训练重叠：
+一种常见的异步保存路径是同步完成 staging，再把较慢的 $T_{storage}$ 与后续训练重叠：
 
 ```text
 training rank:
@@ -256,7 +256,9 @@ background worker:
   host staging → storage write → checksum → finalize
 ```
 
-前台 stall 至少仍包含形成一致 snapshot 和把可变 GPU tensors 转移到安全 buffer 的时间。异步不等于零开销，还会消耗：
+在这条路径中，前台 stall 包含 snapshot 与 staging；但不能把整个 GPU-to-host copy 都视为所有异步方案必付的前台停顿。[PyTorch DCP 的异步保存教程](https://docs.pytorch.org/tutorials/recipes/distributed_async_checkpoint_recipe.html#fully-asynchronous-staging-with-defaultstager)给出了 PyTorch 2.9 引入的 `DefaultStager`：D2H 可在后台与后续计算重叠，调用方在首次修改待保存状态前等待 `staging_completion`。教程示例将等待放在下一步 `optimizer.step()` 前；若 forward 会更新 buffer，或 RNG/data cursor 也在后台读取，它们必须更早冻结、复制或同步，不能机械照搬这个等待位置。磁盘上传完成是另一条 `upload_completion` 边界。
+
+所以应测量关键路径上真正暴露的 snapshot/staging 时间，而不是只给各阶段时长做加法。异步仍会消耗：
 
 - pinned host memory；
 - PCIe/NVLink copy bandwidth；
@@ -336,7 +338,7 @@ $$
 - 没有 in-flight activation/P2P request；
 - data cursor 已推进到对应 step 边界。
 
-若在流水中途保存，就要序列化每个 stage 的 outstanding micro-batches、activation、activation gradient、Forward 参数版本、通信 request 和 schedule position。恢复这些瞬时状态通常比重做当前 step 更贵也更容易出错。
+若要从流水中途精确恢复，需要专门的 quiesce、版本化日志与重放协议，保存每个 stage 的 outstanding micro-batches、必要 activation/gradient、Forward 参数版本、通信的逻辑身份和 schedule position。正在执行的 CUDA kernel、NCCL/P2P request handle 及其传输进度，不能作为普通 state dict 直接序列化后在新进程恢复；应先形成可恢复边界，或在恢复时重新创建通信并确定性重放未提交工作。这通常比重做当前 step 更贵也更容易出错。
 
 因此可以允许故障时丢掉当前未提交 step，但不能把“目录已经写了一半”误认为新 checkpoint。
 

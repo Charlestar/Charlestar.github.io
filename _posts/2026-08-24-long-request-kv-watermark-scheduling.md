@@ -54,11 +54,13 @@ $$
 
 ## 2. 长输入与长输出分别伤害什么指标
 
-TTFT 可以粗略分解为：
+TTFT 应按首 token 真正对客户端可见之前的关键路径计量。把各项定义为不重叠、且确实位于这段路径内的时间，可粗略写成：
 
 $$
-TTFT=T_{queue,P}+T_{prefill}+T_{handoff}+T_{first\_decode}
+TTFT=T_{queue}+T_{prefill}+T_{post\_prefill\to first\_token}
 $$
+
+普通自回归模型在 Prefill 的最后位置就得到首 token 的 logits，不必再做一次完整 Decode 前向。最后一项包括尚未计入的采样与发送；只有架构确实把 handoff、D 侧排队或额外计算放在首 token 发出前时，才计入这些开销。若 P 侧已返回首 token，随后 KV 传输影响的是后续 ITL，不能再次加进 TTFT。
 
 长输入主要增加 Prefill 计算与排队。如果同一 GPU 上还有 Active Decode，一个完整长 Prefill 还会让这些请求等待更久才得到下一 Token。
 
@@ -69,6 +71,8 @@ TPOT_i\approx
 \frac{T_{last\_token,i}-T_{first\_token,i}}
 {N_{output,i}-1}
 $$
+
+这一定义只适用于 $N_{output,i}\ge2$，衡量的是该请求的平均相邻 token 间隔，而不是每个间隔都满足 SLO。只输出一个 token 的请求没有可观测的生成间隔，应记录 TPOT 为 `N/A`，不能除以零或用 0 参与平均。
 
 长输出本身未必让单轮变慢，但它长期留在 Active Batch 中，KV Length 持续增加；达到较大并发时，每轮 Attention 读取的总 KV 更多，其他请求也会受到影响。
 
@@ -88,6 +92,8 @@ WAITING_ADMISSION
   → DECODE_PREEMPTED
   → FINISHED / CANCELLED / REJECTED / ABORTED
 ```
+
+上面列出的是状态集合与总体方向，不是每条请求必须依次经过所有节点：`PREFILL_RUNNING` 可以直接进入 `DECODE_READY`，也可经 `PREFILL_PAUSED → PREFILL_READY` 恢复；`DECODING` 可直接结束，只有被抢占时才进入 `DECODE_PREEMPTED`，之后按保存 KV 或重算策略回到 Decode/Prefill。取消和故障还应有从各活动态退出的边。
 
 每个状态至少绑定：
 
@@ -518,7 +524,7 @@ Trace 应能回答一条请求为什么暂停、何时恢复、Block 在 GPU/CPU
 1. 收集已完成/取消请求并释放 KV
 2. 更新 Active Request 的进度、增长预测与 Deadline
 3. 评估本地水位和全局 Router 状态
-4. Critical 时先执行降压，不接纳新增长
+4. Critical/Emergency 时先降压并停止新增准入；已有请求只在安全预留与分配检查通过时继续增长
 5. 选择紧迫 Decode，保证逐 Token 进度
 6. 为可完成或高价值 Prefill 分配 Chunk/Time/KV Budget
 7. 用剩余容量填充非紧迫 Decode/Prefill
