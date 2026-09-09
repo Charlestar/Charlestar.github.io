@@ -3,7 +3,7 @@ layout: post
 title: "FlashAttention：IO-aware 的精确注意力"
 subtitle: "从在线 Softmax 到 GPU 分块流水线"
 date: 2026-03-17
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: attention-long-context
@@ -57,7 +57,7 @@ HBM 是 GPU 上容量较大的全局显存；寄存器和 shared memory 容量�
 
 $$
 \text{arithmetic intensity} =
-\frac{\text{浮点运算次数}}{\text{从显存搬运的字节数}}
+\frac{\text{浮点运算次数}}{\text{显存读写的总字节数}}
 $$
 
 同样的数据若只做一次加法就写回，算术强度很低；读入后连续参与多次矩阵乘法，算术强度就更高。现代 Tensor Core 的计算吞吐增长很快，如果数据供应不上，更多计算单元也只能等待。
@@ -69,7 +69,7 @@ FlashAttention 的思路类似在厨房里一次取来本轮需要的食材，�
 1. 将 $Q$ 按行分块，将 $K, V$ 按序列维分块；
 2. 把当前块搬入 SRAM/shared memory 或寄存器；
 3. 计算局部 score、Softmax 统计量和输出累积；
-4. 只把最终输出与少量归一化信息写回 HBM。
+4. 避免把完整 score/probability 写回 HBM，只维护输出与少量归一化信息。具体循环顺序仍可能把中间输出累积读写 HBM；“不物化完整注意力矩阵”不等于任何版本都只写一次输出。
 
 困难在于 Softmax 必须看到整行数据。一个 Query 行可能跨越多个 KV 块，不能分别对每个块做 Softmax 后直接拼起来。
 
@@ -113,7 +113,7 @@ $$
 - 当前指数和 $\ell_i$；
 - 尚未除以 $\ell_i$ 的输出累积 $o_i$。
 
-简化伪代码如下：
+下面用 Q-major 循环说明合并原理，并对每行的空 KV 块单独处理；这是教学变体，不是原始 FlashAttention-1 的 KV-major Algorithm 1 的逐行翻译：
 
 ```text
 for each Q block:
@@ -127,17 +127,23 @@ for each Q block:
         s = Q_block @ K_block.T * scale
         apply mask to s
 
-        m_new = max(m, rowmax(s))
-        p = exp(s - m_new)
-        l_new = exp(m - m_new) * l + rowsum(p)
-        o = exp(m - m_new) * o + p @ V_block
+        for each query row i:
+            if this tile has no allowed key for row i:
+                continue
+            m_new = max(m[i], max(s[i, allowed]))
+            p = zeros_like(s[i])
+            p[allowed] = exp(s[i, allowed] - m_new)
+            alpha = 0 if l[i] == 0 else exp(m[i] - m_new)
+            l[i] = alpha * l[i] + sum(p)
+            o[i] = alpha * o[i] + p @ V_block
+            m[i] = m_new
 
-        m = m_new
-        l = l_new
-
-    O_block = o / l
+    for each query row i:
+        O_block[i] = o[i] / l[i] if l[i] > 0 else 0
     write O_block
 ```
+
+这里假定合法位置的 score 为有限值。空块不能直接计算 `exp(-inf - (-inf))`，否则会产生 NaN；整行没有合法 Key 时，数学上的 Softmax 分母为零，未定义。伪代码明确采用输出零向量的接口约定，实际使用前还应核对后端对全 mask 行的处理。
 
 真实 kernel 会把矩阵乘法、mask、位置偏置、dropout、归一化与数据搬运进一步融合。tile 尺寸也不是越大越好：块太小会增加循环与调度开销，块太大则可能超过 shared memory 或寄存器容量，降低 occupancy。实现需要根据 head dimension、dtype、GPU 架构和 mask 类型选择布局。
 

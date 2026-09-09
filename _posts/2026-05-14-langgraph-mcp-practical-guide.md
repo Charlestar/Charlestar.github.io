@@ -122,11 +122,16 @@ def merge_evidence(
     return [merged[key] for key in sorted(merged)]
 
 class ResearchState(TypedDict):
+    request_id: str
     question: str
     plan: list[str]
     evidence: Annotated[list[Evidence], merge_evidence]
     attempts: int
     draft: str | None
+    recipients: list[str]
+    subject: str
+    report_revision: str
+    approved_action_id: str | None
     review_status: Literal["pending", "enough", "insufficient"]
     approval: Literal["not_required", "pending", "approved", "rejected"]
     errors: list[dict]
@@ -202,12 +207,14 @@ client                              server
   ├──── tools/call(name, arguments) ─►│
   │◄── CallToolResult ────────────────┤
   │                                   │
-  └──── graceful shutdown ───────────►│
+  └──── close underlying transport ─►│
 ```
 
 客户端必须以协商后的 protocol version 和 capabilities 为准。server 没声明 `resources`，就不能猜测它支持 `resources/read`；server 声明工具列表会变化，客户端才按对应通知刷新。
 
-协议与 SDK 仍在快速演进，2026 版 SDK 已出现进一步简化 discovery 和多轮输入的方向。应用代码应把 MCP 细节封装在 adapter 中，并固定依赖版本，避免 graph 节点散落具体 transport API。
+图的最后一行是关闭底层 transport，不是名为 `shutdown` 的 JSON-RPC 方法；这里引用的 2025-06-18 规范没有定义专用 shutdown 消息。
+
+协议与 SDK 仍在快速演进，本文的会话图明确以 2025-06-18 规范为例，不将某个 SDK 分支的变化视为全部 MCP 实现的既定能力。应用代码应把 MCP 细节封装在 adapter 中，并固定依赖版本，避免 graph 节点散落具体 transport API。
 
 ## Tools、Resources 和 Prompts 不应混用
 
@@ -315,19 +322,48 @@ def approval_node(state):
 恢复时 `send_email` 可能再次执行，而且动作发生在审批之前。正确结构是先构造一个不可变动作摘要并暂停：
 
 ```python
+from hashlib import sha256
+import json
 from langgraph.types import interrupt
 
-def approval_node(state):
-    proposed = {
+def proposed_action(state):
+    if not isinstance(state["draft"], str):
+        raise ValueError("A completed draft is required")
+    payload = {
+        "request_id": state["request_id"],
+        "action_type": "send_report",
+        "report_revision": state["report_revision"],
         "to": state["recipients"],
         "subject": state["subject"],
         "body_hash": sha256(state["draft"].encode()).hexdigest(),
     }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return {**payload, "action_id": sha256(canonical.encode()).hexdigest()}
+
+def approval_node(state):
+    proposed = proposed_action(state)
     decision = interrupt(proposed)
-    return {"approval": "approved" if decision else "rejected"}
+    approved = (
+        isinstance(decision, dict)
+        and decision.get("approve") is True
+        and decision.get("action_id") == proposed["action_id"]
+    )
+    return {
+        "approval": "approved" if approved else "rejected",
+        "approved_action_id": proposed["action_id"] if approved else None,
+    }
+
+def require_current_approval(state):
+    action = proposed_action(state)
+    if (state["approval"] != "approved"
+            or state["approved_action_id"] != action["action_id"]):
+        raise PermissionError("Approval is missing or refers to an older action")
+    return action
 ```
 
-发送放到审批后的独立 node，并携带与被审批摘要相同的 `action_id`。若用户在审批时编辑正文，应产生新 revision 和新摘要，不能沿用旧批准。
+恢复输入明确为 `{"approve": true, "action_id": "被审核的摘要 ID"}`；不能使用普通 truthiness，否则字符串 `"rejected"` 或 `{"approve": false}` 也会被误当成批准。审批 UI 必须展示与哈希对应的正文和收件人，并由可信应用验证审批者权限，不能接受模型或工具结果伪造的批准。
+
+发送放到审批后的独立 node，先调用 `require_current_approval`，再把该不可变快照及相同的 `action_id` 交给具备业务幂等性的服务。若用户在审批时编辑正文，应产生新 revision 和新摘要，不能沿用旧批准；发送端还需原子地绑定检查过的版本和实际载荷，避免检查后被并发改写。这些函数演示的是审批绑定，不是完整的邮件发送或身份认证实现。
 
 ## 安全边界不能交给模型
 

@@ -3,7 +3,7 @@ layout: post
 title: "FlashInfer：面向 LLM Serving 的可组合 GPU Kernel 库"
 subtitle: "从动态请求形状到 plan/run、JIT 与后端分派"
 date: 2026-05-13
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -174,7 +174,9 @@ Q1 attends [shared prefix + suffix1]
 Q2 attends [shared prefix + suffix2]
 ```
 
-Cascade attention 可以先计算/组织对共享前缀的 attention state，再与每个请求的私有 state 合并。这与 RadixAttention 的职责互补：runtime 判断哪些 token/KV 真正共享，kernel 层利用共享结构减少计算或内存访问。
+Cascade attention 可以把多个请求的 Query 组织起来，共用前缀 K/V 的加载，再分别得到每个 Query 对共享前缀的 attention state，最后与该 Query 的私有 suffix state 合并。**共享的是 K/V 和访存机会，不是不同 Query 的注意力结果**：$S_q(A)$ 仍依赖 $q$，仅凭前缀相同或 Query 相似，不能把一个请求的 state 直接用于另一个。官方[递归注意力定义](https://docs.flashinfer.ai/tutorials/recursive_attention.html)也是固定 Query 后再合并不重叠 KV 集合。
+
+这与 RadixAttention 的职责互补：runtime 判断哪些 token/KV 真正共享，kernel 层利用共享结构减少内存访问。
 
 收益取决于共享前缀长度、batch、Query 是否相同/相关以及具体 wrapper；并不是打开某个 API 后所有 prefix cache hit 都自动获得相同比例的 kernel 加速。
 

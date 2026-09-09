@@ -3,7 +3,7 @@ layout: post
 title: "PagedAttention 与 vLLM KV Cache 管理"
 subtitle: "一条请求的分块、映射、共享与回收"
 date: 2026-03-17
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -76,7 +76,7 @@ block table:      7  19   3
 physical pool:  ...[3]...[7].........[19]...
 ```
 
-当请求继续生成第 11、12 个 token，只需填满物理块 3 的剩余槽位；生成第 13 个 token 时才申请一个新块。请求不必在开始时知道最终长度，也不要求下一块与当前块物理相邻。
+当第 11、12 个 token 作为模型输入被处理时，其 K/V 填入物理块 3 的剩余槽位；处理第 13 个输入位置前才需要新块。这里数的是已物化 K/V 的位置，不是客户端已收到的输出数：刚采样出的最后一个 token 尚未经过下一次 forward。引擎也可能提前为下一轮或推测位置预留块。请求不必在开始时知道最终长度，也不要求下一块与当前块物理相邻。
 
 最后一个块仍可能有空槽，所以分页不是绝对零浪费。若 block size 为 $B_s$，单条序列尾部最多浪费 $B_s-1$ 个 token slot；相较于按最大长度预留，浪费被限制在一个 block 内。
 
@@ -107,7 +107,7 @@ PagedAttention kernel 需要按 block table 收集 K/V。与连续张量相比�
 
 ### 2. 查询已计算前缀
 
-若启用 automatic prefix caching，KV Cache manager 会为 token 前缀计算链式 block hash，查找是否已有相同前缀。经典的同构 attention 配置以完整物理 block 为匹配边界；当前 vLLM 的混合 KV Cache 布局还可通过 `prefix_match_unit` 使用比物理 block 更细的哈希粒度。命中部分无需重新 prefill。
+若启用 automatic prefix caching，KV Cache manager 会为 token 前缀计算链式 block hash，查找是否已有相同前缀。经典的同构 attention 配置以完整物理 block 为匹配边界；当前 vLLM 的混合 KV Cache 布局还可通过 `prefix_match_unit` 使用比物理 block 更细的哈希粒度。命中可省去相应 K/V 重算，但只有 K/V 并不等于已有下一 token 的 logits；全 prompt 命中时，引擎通常仍需重新处理最后一个输入位置或使用另行缓存的隐藏状态/logits。
 
 ### 3. 预留写入槽位
 
@@ -202,7 +202,7 @@ block 越大：
 - block table 更短，地址与元数据开销更小；
 - kernel 访问可能更规整；
 - 但每条请求最后一块的内部浪费更大；
-- 前缀只有达到更粗粒度边界才能命中。
+- 在匹配单位等于物理 block size 的配置中，前缀只有达到更粗粒度边界才能命中；混合模型还需单独检查 `prefix_match_unit` 与可恢复状态边界。
 
 block 越小：
 

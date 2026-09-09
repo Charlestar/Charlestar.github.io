@@ -3,7 +3,7 @@ layout: post
 title: "SGLang 与 RadixAttention：跨请求复用 KV Cache"
 subtitle: "从最长前缀匹配到缓存感知调度"
 date: 2026-05-12 15:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -13,7 +13,7 @@ mathjax: true
 tags: [KV Cache, SGLang, LLM推理]
 ---
 
-许多 LLM 应用会反复计算相同的 prompt 前缀。客服请求都带着同一套服务规则；RAG 用户围绕同一篇文档连续提问；Agent 的每次模型调用都可能附带相同的工具定义。对模型来说，这些前缀一旦 token 完全相同，对应的 KV Cache 也相同，重复 prefill 是可以避免的。
+许多 LLM 应用会反复计算相同的 prompt 前缀。客服请求都带着同一套服务规则；RAG 用户围绕同一篇文档连续提问；Agent 的每次模型调用都可能附带相同的工具定义。在模型权重、Adapter、位置编码、非文本输入与其他影响计算的配置一致时，相同 token 前缀才具备复用 K/V 的条件；还需要满足缓存格式和租户隔离要求。
 
 SGLang 的 RadixAttention 把这一现象提升为运行时的核心数据结构：用 radix tree 组织 token 序列，让请求查找最长已计算前缀，只对剩余 suffix 执行 prefill；调度器也可以利用缓存位置来安排请求。
 
@@ -42,7 +42,7 @@ $$
 16000+100+100=16200\ \text{tokens}
 $$
 
-这不是说端到端时间必然减半。第一次请求仍要完整计算，decode 也不会因为 prompt 命中而消失；但对长输入、短输出、重复率高的服务，prefill 的节省会显著改善 TTFT 和可用算力。
+这不是说端到端时间必然减半。第二次的 100 个新 Query 仍要读取 16000 个历史位置的 K/V，未命中部分的成本不是独立运行一个 100-token prompt 的成本。第一次请求仍要完整计算，decode 也不会因为 prompt 命中而消失；但对长输入、短输出、重复率高的服务，prefill 的节省会显著改善 TTFT 和可用算力。
 
 ## 为什么使用 radix tree
 
@@ -86,6 +86,8 @@ root
 3. 已匹配部分直接引用缓存中的 KV；
 4. 未匹配 suffix 进入 prefill；
 5. 新计算的路径插入树，供后续请求复用。
+
+以上描述逻辑匹配过程；实际命中长度还受 allocator 页大小、后端对齐和可恢复状态限制。整个输入都命中时，仅有 K/V 不等于已经保存了下一 token 的 logits，通常还需要保留最后一个输入位置重新执行，除非另有隐藏状态/logits 缓存。
 
 用 token 字母表示，已有缓存：
 
@@ -218,10 +220,10 @@ $$
 =\text{queue cost}
 +\text{uncached prefill cost}
 +\text{decode cost}
-+\text{cache pressure}
++\text{cache-pressure penalty}
 $$
 
-这不是一个固定公式，而是理解决策所需的四类信息。实际生产还要加入优先级与 SLO，避免缓存命中率成为唯一目标。
+这只是部署侧的示意评分，不是 SGLang 论文的原公式。若前三项使用毫秒，最后一项也必须把容量压力映射成同单位的预计等待/抢占惩罚，不能直接把缓存百分比与时间相加；同时避免重复计算队列中已包含的惩罚。实际生产还要加入优先级与 SLO，避免缓存命中率成为唯一目标。
 
 多副本部署时，普通 round-robin 或最短队列路由看不到各实例的 KV 状态，会破坏跨请求复用。prompt-aware router 需要知道前缀亲和性，同时处理实例故障、扩缩容和热点文档倾斜。
 
