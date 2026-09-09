@@ -3,7 +3,7 @@ layout: post
 title: "Attention–FFN 解耦：一层 Transformer 为什么要跨两类 GPU Pool"
 subtitle: "从 KV 状态、MoE Expert 权重到逐层 Activation 传输，理解 AF Disaggregation 的容量与通信边界"
 date: 2026-08-28 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: moe-communication
@@ -23,7 +23,7 @@ tags: [MoE, 专家并行, 分布式推理]
 
 ## 先看一个普通 MoE Transformer layer
 
-忽略 LayerNorm、residual 和细节算子，一个 decoder layer 可以写成：
+保留 Norm 与 residual，省略其他细节算子，一个 pre-norm decoder layer 可以写成：
 
 $$
 u_l=x_l+\mathrm{Attention}_l(\mathrm{Norm}(x_l),KV_l)
@@ -158,7 +158,7 @@ A、F 两侧 rank 数可以不同，路由是 many-to-many，发送与接收行�
 - `request_id / slot_id / layer_id / token_pos`，用于结果归位；
 - logical expert 到 physical F rank 的映射版本；
 - Top-$k$ 权重与 combine 顺序；
-- microbatch epoch，防止迟到包写入下一轮；
+- microbatch epoch，用来识别和拒绝迟到结果；物理 buffer 的防迟到写入还需下面的传输生命周期协议；
 - cancellation 与 timeout 状态，避免已释放 slot 被旧结果污染。
 
 直接把为对称 EP 调优的 All-to-All 搬过来，往往既浪费连接，也难以表达 A/F 不同规模。实现需要针对 M-to-N dispatch/combine、RDMA buffer ownership 与 credits 重新设计。
@@ -203,7 +203,7 @@ $$
 T_j=\sum_{b=1}^{B}(P_{j,b}+A_{j,b})
 $$
 
-$P$ 是 prompt 长度，$A$ 是当前已生成长度。Attention 时间可近似拟合为：
+$P$ 是 prompt 长度，$A$ 是本轮输入处理后已经物化进 KV 的生成 token 数。若日志记的是刚采样出的累计输出数 $G$，普通逐 token Decode 在下一次 forward 之前通常只有 $G-1$ 个输出已物化；不能直接把两个计数混用。Attention 时间可近似拟合为：
 
 $$
 t_A(T_j)=\alpha_AT_j+\beta_A
@@ -241,11 +241,15 @@ t_F(rB)
 \right\}
 $$
 
-按实例数归一化的吞吐可以写成：
+若这些 $t_A,t_C,t_F$ 来自单层 profile，按实例数归一化得到的首先是 **token-layer 吞吐**：
 
 $$
-Throughput_{inst}=\frac{1}{r+1}\cdot\frac{rB}{E[\tau(B,r)]}
+Throughput_{layer,inst}=\frac{1}{r+1}\cdot\frac{rB}{E[\tau(B,r)]}
 $$
+
+一条输出需要遍历 $L$ 层。若所有层同质，并在同一组 A/F 硬件上反复执行，理想完整输出吞吐还要除以 $L$；流水填充不会消除这些累计工作。异构层应分别累计各资源上的工作，再结合调度依赖估计；只有当 $\tau$ 已按完整 decode 轮次标定时，$rB/E[\tau]$ 才直接表示完整输出 token/s。[相关 A/F 比例分析的 §3 与附录 B](https://arxiv.org/html/2601.21351v1)使用了抽象周期与单层系数，应用到整模型容量时必须明确这一换算。
+
+这里归一化的是实例数，不自动等于 GPU 数或成本。若每个 A 实例用 $g_A$ 张卡、F 实例用 $g_F$ 张卡，每 GPU 吞吐的资源分母应改为 $rg_A+g_F$；异构卡还应按实际价格计费。该周期模型描述流水充分填充后的服务率，不表示一条请求跨全部层的延迟只等于一个最大阶段时间；填充、排空与串行依赖仍然存在。
 
 这个表达式说明 $r$ 太小与太大都会浪费：
 
@@ -370,6 +374,8 @@ deadline
 
 如果请求已取消，迟到的 F result 必须被丢弃；如果 A worker 重试，同一 `(epoch, step, layer)` 不能重复提交 residual；如果 expert map 正在滚动升级，dispatch 和 combine 必须使用同一版本。推荐让每层调用具有幂等键，并让 A 侧作为 commit owner：只有收到完整、版本匹配的 combine 结果才推进 layer state。
 
+但 epoch 检查不是 DMA 屏障。已发出的 RDMA 或 GPU kernel 可能在检查结果前就写入目标地址；应先停止旧轮次的新提交，并通过受支持的 fence/drain 或缓冲区隔离确认旧访问终止，再复用 slot 和归还对应 credits。只丢弃迟到 completion、却提前把同一物理地址交给新请求，仍会破坏新请求的数据。
+
 F worker 失败时是否能安全重试取决于算子确定性和随机状态。MoE FFN 本身通常是纯函数，但量化 kernel、通信归约和故障后的不同 expert replica 可能产生数值差异。恢复策略要明确“容许近似重算”还是“要求 bitwise/within-tolerance 等价”。
 
 ## Backpressure 要从 F 侧传回准入层
@@ -435,6 +441,8 @@ $$
 Cost_{Mtoken}=
 \frac{GPU\_hours\cdot price+network+host}{accepted\ output\ tokens/10^6}
 $$
+
+分子各项必须是同一统计区间内的货币成本：`price` 为每 GPU·小时的价格，`network`、`host` 为金额，不是原始字节或秒数；避免把已包含在 GPU 实例报价中的主机部分重复计费。分母指实际提交给用户的输出，不包含 speculative 候选；若衡量 SLO goodput 成本，则只统计满足约定 SLO 的完成请求输出，并明确失败与取消的处理。
 
 若 AFD 提高了 FFN operator HFU，却需要更多空闲 A nodes、昂贵互联或更高尾延迟，它仍可能是成本负优化。
 

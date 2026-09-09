@@ -113,7 +113,7 @@ $$
 A_p(t)=\sum_{c\in p} service_c(t)
 $$
 
-Service 可以用模型执行时间、Decode Steps 或经过校准的 GPU Work 表示。PLAS 优先选择 $$A_p$$ 较小的 Program：
+原始 [Autellix §4.2.1](https://arxiv.org/html/2502.13965v1#S4.SS2.SSS1)的 PLAS 以此前已完成 LLM Calls 的执行时间之和初始化新 Call 优先级，正在执行 Call 的服务由抢占调度继续计入。上式是持续记账的抽象；若改用 Decode Steps 或校准 GPU Work，属于需要重新验证的工程变体，不是论文原定义。PLAS 优先选择 $$A_p$$ 较小的 Program；以下采用“数值越大越优先”的记号：
 
 $$
 priority(c)=-A_{program(c)}
@@ -148,9 +148,9 @@ A ─ B ───┤            ├─ E
 
 若 C 分支远慢于 D，继续优先执行已经不阻塞 Join 的 D1 后续工作，可能不能缩短 Makespan。
 
-Autellix 的 ATLAS（Adaptive Thread-Level Attained Service）把累计服务扩展到 Thread，并利用 Program 内 Thread 的最大累计服务近似 Critical Path。它在没有完整未来 DAG 的情况下，让阻塞 Program 推进的关键 Call 获得更合理的顺序。
+Autellix 的 ATLAS（Adaptive Thread-Level Attained Service）用已观测的最长累计服务路径近似 Critical Path。论文先写出基于父节点的理想递推，再以每个 Program 的一个累计最大值实现近似：新 Call 继承这个值，完成时尝试更新它，并不要求 Serving 引擎跟踪完整 Fork/Join 依赖图。
 
-实现需要 Agent Runtime 报告 Fork/Join 和 Thread 关系。只给所有并行 Call 相同 `program_id`，却没有依赖结构，Scheduler 仍无法判断哪个分支卡住了 Join。
+这一区别很重要：ATLAS 可以只凭 Program Identity 与服务记账改善调度，但不能由此精确知道哪个未来分支会成为最长路径。若想进一步做显式 Join-aware 调度、截止期传播或取消，Agent Runtime 才需要报告足够的 Thread/依赖关系；这是后文提出的系统接口扩展，不能倒过来当成原算法的必要输入。
 
 ## 7. Program Scheduler 不应直接猜业务 DAG
 
@@ -392,6 +392,8 @@ queue\_delay
 +memory\_pressure
 $$
 
+这是本文的 placement 启发式，不是 Autellix 的优先级公式。若 `Cost` 用秒表示，每项都必须是预测的增量时间：`memory_pressure` 应转换成预计抢占/排队代价，不能直接加 KV 字节或水位比例；`critical_path_delay` 只能计尚未被前几项覆盖的下游影响。存在重叠时应用依赖图估计完成时间，不能把同一段等待重复相加。
+
 若所有分支都放在同一 Engine，可能形成局部拥塞；完全打散又会丢失公共 Prefix，并增加 Join 前的数据与状态协调。
 
 全局 BFD（Best-Fit Decreasing）一类装箱可以作为启发式：按预测资源需求把 Program/Thread 放到最合适的容量槽。但 Agent DAG 动态展开，预测随时会变，Placement 必须支持重新评估、迁移和保守回退。
@@ -444,6 +446,8 @@ score_p
 -w_2\cdot waiting_p
 -w_3\cdot urgency_p
 $$
+
+这里约定分数越小越优先，$w_i\ge0$；各输入要先归一化，或由权重完成单位换算。它只是加入 aging/deadline 的示意规则，与前面“数值越大越优先”的负服务量记号方向相反。有限权重本身也不是任意过载情况下的无饥饿证明，还需准入控制和明确的最低服务契约。
 
 还可以按租户设置 Weighted Fair Share，防止一个租户用大量短 Program 占满所有完成槽。
 
@@ -505,7 +509,7 @@ Prefix Cache 是可供一个或多个未来请求复用的已完成前缀；Susp
 
 | 状态 | Owner | 可否逐出 | 恢复语义 |
 | --- | --- | --- | --- |
-| Reusable Prefix | Cache/Tenant | 可重算后逐出 | Miss 只增加 Prefill |
+| Reusable Prefix | Cache/Tenant | 无活动引用时可逐出 | 后续 Miss 再重算 Prefill |
 | Suspended Program KV | Program Attempt | 按策略迁移/重算 | 错用会破坏继续生成 |
 | Active Decode KV | Running Sequence | 需先抢占/提交 | 下一轮立即读取 |
 
@@ -518,7 +522,7 @@ Suspended State 还绑定 Sampling、Stop、Grammar 与工具调用位置，不�
 工具调用可能由 Grammar-Constrained Decoding 生成。暂停点除了 KV，还可能包含：
 
 - Grammar Matcher State；
-- 已输出但尚未提交的 Token；
+- 已生成但尚未对外提交的候选，以及已提交但尚未发送的输出缓冲；两者必须分开，不能把待验证 token 当成普通已发布输出；
 - UTF-8/JSON 流式边界；
 - Sampling RNG 与 Speculative Decode State；
 - Stop Sequence 的部分匹配；
@@ -538,6 +542,7 @@ cancel program epoch
 → cancel safe external tools
 → mark running calls cancelled
 → discard late tool results
+→ quiesce/drain in-flight GPU and transfer work, or isolate its buffers
 → release active/suspended KV
 → close joins and emit final state
 ```
@@ -674,7 +679,7 @@ Serving layer:
   how GPU service is shared
 ```
 
-两层都需要暂停/恢复，却不能共用一个模糊的“checkpoint”概念。Agent Checkpoint 保存业务事实，KV Checkpoint 保存可重算的模型执行状态。前者决定正确性，后者主要决定性能。
+两层都需要暂停/恢复，却不能共用一个模糊的“checkpoint”概念。Agent Checkpoint 保存业务事实，KV Checkpoint 保存模型执行状态。只有已保存完整输入、模型版本和采样/提交边界，且允许在约定数值误差内重算时，丢弃 KV 才主要增加计算成本；复用错误 KV 同样会改变输出，不能把它的版本与一致性当作纯性能问题。
 
 ## 32. 结语
 

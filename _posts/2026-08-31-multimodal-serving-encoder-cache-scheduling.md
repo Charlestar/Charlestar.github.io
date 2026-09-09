@@ -60,7 +60,7 @@ $$
 - $$H_v$$ 是视觉编码器输出；
 - $$E_v$$ 是已经对齐到语言模型隐藏维度的视觉 Embedding。
 
-语言模型最终接收的是文本 Embedding 与视觉 Embedding 组合后的序列，而不是 JPEG 字节本身。
+对下文的占位符替换架构，语言模型最终接收的是文本 Embedding 与视觉 Embedding 组合后的序列，而不是 JPEG 字节本身；Cross-Attention 架构则以独立视觉 Memory 供语言模型读取。
 
 LLaVA 展示了一种经典结构：用预训练视觉编码器提取特征，再通过可训练 Projection 将视觉特征接到语言模型。后来的模型加入动态分辨率、多尺度切块、视频帧、Cross-Attention 等机制，但“媒体输入必须先变成模型能消费的表示”这一点没有改变。
 
@@ -139,7 +139,7 @@ LLM Decode
 - 声明的 MIME Type；
 - 租户并发与带宽配额。
 
-### 4.2 解码后才能确认的限制
+### 4.2 解析媒体头及受控解码过程中确认的限制
 
 - 图片宽高与总像素；
 - 动图或视频帧数、时长与采样后帧数；
@@ -148,6 +148,8 @@ LLM Decode
 - 合并后的模型上下文长度。
 
 第二层检查必须在进入 GPU 调度队列之前完成。否则一个超高分辨率请求可能占住 Queue Slot，直到 Encoder 分配显存时才失败，既浪费前置计算，也干扰其他租户。
+
+也不能等到完整像素数组分配后才限制解码规模。应尽可能先从格式头检查尺寸，在受限进程中以内存、CPU 时间和逐帧累计上限完成解码，再检查实际输出。头部信息不可信，前置检查与运行时资源限制需要同时存在；[Pillow 的 decompression-bomb 保护](https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.open)也不应被简单关闭。
 
 ## 5. Media I/O 是一个真实的安全边界
 
@@ -162,6 +164,8 @@ LLM Decode
 - SVG 等主动内容间接触发外部资源访问。
 
 安全实现应在每次解析和重定向后校验目标地址，默认拒绝 Loopback、Link-local、私网与保留网段；对下载字节数、时间、解码像素和帧数设置硬限制；并使用及时更新、受隔离的媒体解码库。
+
+DNS 检查必须与实际连接的目标绑定，不能检查一次公网解析结果后，又让 HTTP 客户端重新解析到另一个地址。禁用自动重定向，或逐跳重新授权目标并限制连接到已验证地址；结合出站网络策略控制绕行路径。这与 [OWASP SSRF 防护指南](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)强调的解析、重定向与网络层约束相对应。
 
 如果业务不需要任意公网抓取，更稳妥的接口是让用户先把媒体上传到受控对象存储，再向推理服务传递短期签名引用或内容摘要。这样可以把抓取策略、病毒扫描和生命周期治理放在独立边界。
 
@@ -198,11 +202,13 @@ tokenizer_revision
 固定分辨率模型通常把图片缩放到固定尺寸，再按 Patch 切分。若 Processor 将 $$H \times W$$ 的处理后图片分别补齐到最近的 $$p$$ 的整数倍，Patch 大小为 $$p \times p$$，忽略额外特殊 Token 时，视觉 Patch 数是：
 
 $$
-N_v = \left\lceil \frac{H}{p} \right\rceil
+N_{patch} = \left\lceil \frac{H}{p} \right\rceil
           \left\lceil \frac{W}{p} \right\rceil
 $$
 
 这里的向上取整来自补齐操作，并不是所有视觉编码器的通式：若 Patch Embedding 使用不带 Padding 的步长卷积，数量应按实际处理后尺寸取下整；若 Processor 先 Resize/Crop 到固定可整除尺寸，则直接使用处理后的网格大小。Serving 侧应读取模型 Processor 给出的真实 Grid，而不是仅凭原图宽高套公式。
+
+还要区分 Encoder 的 $$N_{patch}$$ 与最终进入 LLM 的 $$N_v$$。例如 [Qwen2-VL §2.1](https://arxiv.org/html/2409.12191v2#S2.SS1)在 ViT 后把相邻 $$2\times2$$ 特征合并：处理后 224×224、patch size 14 对应 256 个 Patch，却只产生 64 个合并视觉向量，再加视觉起止标记共占 66 个序列位置。不能把 Encoder Patch 数直接计成 LLM KV 长度。
 
 动态分辨率模型不再让所有图片都产生固定 $$N_v$$。高分辨率文档、长图或宽屏截图会保留更多细节，也会生成更多视觉 Token。Qwen2-VL 将这种能力称为 Naive Dynamic Resolution，并进一步用多模态位置编码表达图片与视频的空间、时间信息。
 
@@ -220,7 +226,7 @@ $$
 
 对 Decoder-only 模型，视觉 Embedding 通常只在 Prefill 阶段输入一次，却会影响后续每一层的 KV 状态。
 
-假设文本 Prompt 有 $$N_t$$ 个 Token，视觉部分产生 $$N_v$$ 个 Embedding，总 Prefill 长度近似为：
+对于视觉位置作为普通 decoder self-attention 输入的架构，令 $$N_t$$ 为最终保留的文本与控制标记数（不包含将被替换的视觉占位位置），视觉部分产生 $$N_v$$ 个 Embedding，总 Prefill 长度为：
 
 $$
 N_{\text{prefill}} = N_t + N_v
@@ -236,6 +242,8 @@ M_{KV} \propto
 $$
 
 其中 $$L$$ 是层数，$$H_{KV}$$ 是 KV Head 数，$$D$$ 是 Head Dimension，系数 2 对应 Key 与 Value。实际字节数还取决于数据类型、Block 对齐和并行切分。
+
+该式假设各层使用相同的普通 MHA/GQA KV 布局与完整上下文，且 Key/Value 维度相等。MLA、滑动窗口、混合层或视觉 Cross-Attention 应按各缓存组分别计量，不能直接套同一 $$L H_{KV}D$$。
 
 这解释了为什么一张图片虽然在 API 层只是一个对象，却可能消耗数百或数千个“上下文位置”。调度器若只按文本 Token 收费和限流，会系统性低估多模态请求。
 
@@ -353,6 +361,8 @@ vision_encoder_weights_revision
 + model_specific_processing_options
 ```
 
+这里的“还应加入”指继承完整 Processor Key，再追加这些字段，不是只用 Encoder 版本取代内容身份。若 Processor 含随机裁剪或抽帧，必须固定随机规则/seed、把实际采样结果纳入身份，或禁止把不同结果当作同一缓存条目。
+
 如果 Adapter 会修改视觉 Encoder 或 Connector，Adapter 身份也必须加入；若 LoRA 只作用于语言模型层，则要根据实际注入位置判断，而不是无条件加入或省略。
 
 LLM Prefix Cache 则依赖最终输入 Embedding、位置编码、模型权重和 Adapter 身份。Encoder Cache 命中并不意味着 KV Cache 一定命中，因为用户问题、Chat Template 或图片在 Prompt 中的位置可能不同。
@@ -440,7 +450,7 @@ Turn 3: 把表格整理成 JSON。
 
 不过对话模板经常把历史消息重新串接，图片占位符的位置可能变化；模型也可能要求每一轮都保留完整视觉前缀。Encoder Embedding 通常与文本位置无关，但加入位置编码或模型专用融合之后未必如此。
 
-因此系统应缓存“模型定义允许复用的最早阶段”，再在当前 Prompt 中重新完成位置相关组合，而不是假设上轮的最终 KV 可以任意搬到新上下文。
+因此系统应选择在当前语义下仍可复用、且收益合适的缓存阶段，再完成位置相关组合；既不要求一律缓存最早阶段，也不能假设上轮的最终 KV 可以任意搬到新上下文。
 
 ## 19. Scheduler 需要同时理解三种预算
 
@@ -482,6 +492,8 @@ chunk 3: remaining user text
 
 取消请求时，尚未进入 LLM 的 Encoder 输出、已分配但未写满的 KV Block，以及 Processor 中间对象都要释放。跨阶段状态越多，取消路径越需要显式资源所有权。
 
+这里的释放发生在相关计算/复制已完成或已被安全隔离之后。取消标记并不终止已提交的 GPU 写入；带共享引用的缓存对象也只能解除当前请求引用，不能一并删除其他请求仍在使用的条目。
+
 ## 21. Tensor Parallel 下视觉编码器怎样放置
 
 语言模型可能采用 Tensor Parallel 切分权重。视觉 Encoder 的规模和通信模式不同，不一定适合同样切分。
@@ -519,13 +531,16 @@ Connector 也不能遗漏。若 Projector 将视觉维度映射到 LLM Hidden Si
 
 文本生成可以在 Prefill 完成后逐 Token 返回。图片请求在第一个 Token 之前，通常必须完成下载、解码、Processor、Encoder、Connector 和 LLM Prefill。
 
-因此多模态 TTFT 可以分解为：
+若各阶段串行且计时互不重叠，服务端 TTFT 可写成下面的分项基线，其中 `decode` 指媒体文件解码，不是 LLM Decode：
 
 $$
 T_{TTFT} = T_{fetch} + T_{decode} + T_{process}
 + T_{encoder\_queue} + T_{encoder}
 + T_{llm\_queue} + T_{prefill} + T_{sample}
++ T_{connector\_transfer} + T_{emit}
 $$
+
+最后两项补上尚未被其他计时包含的 Connector/设备传输，以及首 token 发送；客户端口径还要计入上下行网络等开销。实际系统可能在多张图片之间流水、从缓存跳过阶段，或将 Connector 融入 Encoder，因此应按实际依赖关键路径计量，不能对重叠或已经包含的时间重复求和。普通自回归模型的首 token logits 来自 Prefill，不需要再无条件加一次完整 Decode 前向。
 
 如果只暴露一个 TTFT，用户看到的抖动很难定位。更好的 Trace 会记录每个阶段开始、结束和缓存命中事件。
 
@@ -656,7 +671,7 @@ finish_reason
 ```text
 1. API 验证媒体数量、Scheme、租户配额
 2. 安全下载并增量计算内容摘要
-3. 解码后检查像素、帧数和 MIME
+3. 先解析格式头检查尺寸，再在像素/帧数/资源限制内解码并验证实际内容
 4. 查询 Processor Cache
 5. Processor 生成 Pixel Tensor、Tiles 与视觉 Token 元数据
 6. Admission Controller 估算 Encoder 和 LLM 成本

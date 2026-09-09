@@ -99,7 +99,7 @@ $$
 
 因此它更像一个针对 future block 训练的轻量扩散适配器，而不是独立完成整段文本生成的通用 diffusion LLM。
 
-## 并行预测不等于各位置互相独立
+## 联合表示不等于自回归条件分布
 
 若简单地让所有位置只看相同历史上下文，然后分别预测下一个、第 2 个、第 3 个 token，远端位置会缺少中间 token 信息：
 
@@ -113,6 +113,8 @@ $$
 - 从目标模型多个深度抽取隐藏状态，融合后持续注入 drafter，提供比单个 token embedding 更丰富的语义上下文。
 
 但注意，mask 在推理时还不是正确 token。双向 attention 能建立位置之间的联合表示，却不会凭空提供真实的 $y_{<i}$。所以 DFlash 仍会出现“前面准、后面逐渐偏离”的接受分布，块长不是越大越好。
+
+表示交互也不等于采样结果统计相关。固定上下文 $x$（含 anchor 与目标特征），若 drafter 前向是确定的，再使用独立随机数对每个位置的 logits 采样，则候选联合分布仍是 $q(y_{1:\gamma}\mid x)=\prod_i q_i(y_i\mid x)$。双向 attention 改变各个 $q_i$ 的计算，却不会让后面的位置条件化于这次已经抽出的前面候选。若改用共享随机潜变量或顺序修正采样，就要按实际 proposal 重新分析，不能直接套这个乘积。
 
 ## 目标隐藏状态为何要注入每一层 KV
 
@@ -131,6 +133,8 @@ $$
 
 mask query 在每一层都能重新访问这些特征。对应的 KV 可以跨 drafting cycle 复用，避免反复从头构造目标上下文。这让 drafter 有空间增加到多层，同时仍与目标模型的表示对齐。
 
+上述投影式是对位置 $t$ 的写法，实际 cache 保存的是多个有效上下文位置的特征投影序列，不是只留下最后一个 $h_t$。前面的 $M_d(h_t,\ldots)$ 只是对这份上下文状态的简写；每轮还需追加已验证位置，并去掉拒绝后缀。
+
 代价也很明确：
 
 - serving engine 必须暴露并保存选定目标层的 hidden states；
@@ -148,7 +152,7 @@ $$
 p_i=p(y_i\mid x,y_{<i})
 $$
 
-但生成的语义仍是自回归的。若第 3 个候选被拒绝，第 4 个候选是在错误的第 3 个 token 条件下构造或验证的，不能跳过第 3 个继续接受。因此提交结果必然是：
+但目标模型的语义仍是自回归的。若第 3 个候选被拒绝，第 4 个位置已经算出的 target logits 以原候选 $y_3$ 为条件，不适用于修正后的前缀，不能跳过第 3 个继续接受。这里失效的是验证条件；不能反过来说 DFlash 的第 4 个候选必须先等第 3 个候选生成。因此提交结果必然是：
 
 ```text
 draft:   y1 ✓   y2 ✓   y3 ✗   y4 ?   y5 ?
@@ -246,9 +250,9 @@ Normal decode ───────────────────┘
 
 调度器至少要显式记录：
 
-- `draft_block_size`：本轮实际提出多少位置；
+- `draft_block_size` 与 `num_draft_tokens`：分别记录配置槽数和候选数，DFlash 默认两者相差一个 anchor；
 - `draft_tokens` 与 `verified_tokens`：两类计算量不能混为 output tokens；
-- `accepted_prefix`：每轮真实推进长度；
+- `accepted_draft_tokens`：实际接受的草稿前缀长度；`committed_tokens`：包含修正/bonus、并经过停止条件裁剪的真实推进长度；
 - `draft_wait_ms`、`verify_wait_ms`：定位排队来自哪一侧；
 - `draft_model_id`、`target_model_id` 与 checkpoint hash：防止错误配对；
 - sampling 参数与 verifier mode：保证请求语义一致。
@@ -275,19 +279,23 @@ draft_epoch         draft 状态所属轮次
 
 只有验证成功后才能推进 `committed_token_end`；本轮由 target logits 产生的修正/bonus token 尚未作为输入计算，因此 `target_kv_end` 通常暂时比它落后一个位置，并在下一轮补齐。请求取消、超时、迁移或 worker 重启时，应按 KV 的实际物化边界回收 speculative pages，避免把拒绝候选页误当成修正 token 的状态，也避免幽灵引用与显存泄漏。
 
+逻辑回滚与物理回收还要分开：先禁止新引用，再等待相关 kernel/传输完成或按协议隔离旧 buffer，才能复用内存。改变 epoch 只能拒绝旧结果，不能阻止已经发出的异步写入。
+
 ## CUDA Graph 与 ragged batch 的矛盾
 
-固定 block size 便于捕获 CUDA Graph，但真实请求会在不同位置结束，且动态调度可能为不同请求选择不同长度。若把所有请求 padding 到最大块：
+固定 block size 便于捕获 CUDA Graph，但真实请求会在不同位置结束，且动态调度可能为不同请求选择不同长度。仅统计候选槽位，若把所有请求 padding 到最大候选数：
 
 $$
-N_{verify}^{padded}=B\cdot\max_i\gamma_i
+N_{candidate}^{padded}=B\cdot\max_i\gamma_i
 $$
 
-而真正需要的验证 token 数只是：
+而有效候选槽位数只是：
 
 $$
-N_{verify}^{ragged}=\sum_i\gamma_i
+N_{candidate}^{ragged}=\sum_i\gamma_i
 $$
+
+这不等于 target 实际 forward 的输入位置数。若每条请求还带一个尚未物化 KV 的 anchor，且验证末位要产生 bonus logits，那么忽略其他 padding 时，输入数分别是 $B(1+\max_i\gamma_i)$ 与 $\sum_i(1+\gamma_i)$。首项 logits 是否另行保留、是否计算 bonus 等实现选择，也必须反映在 runner 的计数中。
 
 要避免省下的候选又被 padding 补回去，可以准备少量分级 graph，例如 4、8、12、16，或使用支持 ragged verification 的 kernel。graph 数量过多会增加捕获时间、显存常驻和调度复杂度；分级太粗则浪费验证计算。最优 bucket 应来自真实 `gamma_i` 分布，而不是拍脑袋选择。
 
@@ -307,7 +315,7 @@ $$
 
 ### 算法层
 
-- 各任务、各温度下的平均接受长度 $\tau$；
+- 各任务、各温度下的平均提交长度 $\tau=E[C_\gamma]$，另报草稿接受长度 $E[A_\gamma]$；
 - $P(A\ge k)$ 前缀存活曲线，而非只有均值；
 - 每个 block 位置的 token accuracy；
 - draft layer 数、block size、特征层选择的消融；
