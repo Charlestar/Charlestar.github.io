@@ -3,7 +3,7 @@ layout: post
 title: "EAGLE：为什么推测解码要预测 Feature"
 subtitle: "从 Feature Uncertainty、Advanced Token 到树形草稿与无损验证"
 date: 2026-06-09 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -425,17 +425,21 @@ correction token:           X
 
 在确定性 kernel、相同 logits 处理和无数值 tie 的理想条件下，结果与目标模型逐 token greedy decode 相同。工程上仍要检查浮点舍入、不同 batch shape 和 kernel 选择是否改变极接近的 logits 排名。
 
-## 随机采样验证：不能只比较 token 是否相同
+## 随机采样验证：接受规则怎样保持目标分布
 
-有温度、top-p 或其他随机采样时，如果只接受与目标模型单次采样“恰好相同”的 token，会改变输出分布。无损 speculative sampling 必须使用接受—拒绝修正。
+有温度、top-p 或其他随机采样时，验证器要保持的是目标模型经过这些处理后的采样分布。仅凭“比较 token 是否相同”，无法判断算法是否有损；失配时提交哪个 token 同样关键。
 
-在某个已确定的树路径位置，设 drafter 提议 token $x$ 的分布为 $q$，目标模型分布为 $p$。接受概率为：
+先看一种简单的精确验证。对同一个已确定前缀，独立采样目标 token $X\sim p$ 与候选 $Y\sim q$：若相同就提交它并继续验证；首次不同时提交**刚才那个 $X$**，丢弃后续候选并结束本轮。两种分支实际输出的都是同一个目标样本 $X$，因此输出仍服从 $p$。只有前面的候选全部匹配时，后续位置在候选前缀上算出的目标分布才仍然有效。若失配后丢掉原来的 $X$、另外随意重采样，这个论证便不再成立。[Transformers v4.57.1 的 assisted decoding 实现](https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/generation/utils.py)在没有 candidate logits 的随机采样分支中就保留了同一次目标采样的匹配前缀和首个失配 token。
+
+独立匹配的单步接受率为 $\sum_x p(x)q(x)$。常用 speculative sampling 采用另一组配套的接受与修正规则，将单步接受率提高到 $\sum_x\min(p(x),q(x))$。下面推导这组规则，而非把它当作所有无损验证器唯一可能的形式。
+
+在某个已确定的树路径位置，设 drafter 提议 token $x$ 的实际分布为 $q$，目标模型分布为 $p$。两者均包含各自实际使用的 logits 处理和归一化。对从 $q$ 采到的候选（因此 $q(x)>0$），接受概率为：
 
 $$
 a(x)=\min\left(1,\frac{p(x)}{q(x)}\right)
 $$
 
-若拒绝，则从正残差分布采样修正 token：
+在这一接受规则下，若拒绝，就必须配套从正残差分布采样修正 token：
 
 $$
 r(y)=
@@ -456,7 +460,7 @@ p(x)-\min(q(x),p(x))
 =\max(0,p(x)-q(x))
 $$
 
-两条路径相加仍是目标分布 $p$。这就是论文所说 lossless 的含义：算法输出分布与目标模型原始采样分布一致，而不是保证给定相同随机种子后文本逐字相同。
+两条路径相加仍是目标分布 $p$。若 $p=q$，拒绝概率为零，残差归一化分母也为零；此时根本不应进入残差采样分支。这里使用的是 [speculative sampling 论文](https://proceedings.mlr.press/v202/leviathan23a.html)的配套规则。Lossless 指输出分布与目标采样分布一致，并不保证给定相同随机种子后文本逐字相同。
 
 在候选树中，系统还要记录每个节点由哪个 proposal distribution 产生、兄弟候选采用什么抽样方式，并沿被选择的路径递归执行验证。不能把线性 speculative sampling 的公式不加修改地套到任意 top-k 树布局上；tree construction 与 tree verification 必须使用相互匹配的算法。
 

@@ -3,7 +3,7 @@ layout: post
 title: "DFlash：Block Diffusion 怎样一次生成一整段 Draft"
 subtitle: "从目标隐藏状态、并行块预测到前缀验证，理解扩散式推测解码的收益边界"
 date: 2026-08-27 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -152,18 +152,20 @@ $$
 
 ```text
 draft:   y1 ✓   y2 ✓   y3 ✗   y4 ?   y5 ?
-commit:  [y1, y2] + 目标分布给出的校正 token
+commit:  [y1, y2] + 验证规则给出的校正 token
 ```
 
-greedy decoding 可以直接比较 candidate 与目标模型 argmax。带温度采样时则必须使用与 speculative sampling 一致的接受—拒绝与残差分布，才能保持目标模型的采样分布。不能把“目标模型看过一遍”误写成“无条件无损”；无损来自正确的验证算法，而不是 DFlash 名字本身。
+greedy decoding 可以直接比较 candidate 与目标模型 argmax。随机采样则需要一套保持目标分布的完整验证规则：例如逐位置从目标条件分布采样，匹配时继续，首次失配时提交**同一次目标采样的 token**并结束本轮，也可以无损；其单步独立匹配概率为 $\sum_xp(x)q(x)$。[Transformers v4.57.1 的 assisted decoding](https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/generation/utils.py)提供了这种实现。
 
-若第 $i$ 个位置在此前缀已经通过的条件下被接受的概率为 $c_i$，至少接受到第 $k$ 个候选的概率为：
+常用 speculative sampling 为取得更高接受率，采用 $\min(1,p(x)/q(x))$ 接受候选；在**这一接受规则下**，拒绝时必须配套从归一化的 $[p-q]_+$ 残差分布采样，才能补齐目标概率质量。$q$ 必须是该位置候选的实际 proposal 分布，$p$ 包含目标侧的温度与过滤规则。两类验证器都要在首次失配/拒绝处停止使用后续候选，并处理 EOS 和长度上限；无损来自验证规则，而非“目标模型看过一遍”。此处是在解释精确验证的条件，不表示每个 DFlash 服务后端都实现了所有采样模式。
+
+用 $A_\gamma$ 表示本轮最多 $\gamma$ 个候选中通过验证的连续草稿数，暂不考虑生成终止。若第 $i$ 个位置在此前缀已经通过的条件下被接受的概率为 $c_i$，至少接受到第 $k$ 个候选的概率为：
 
 $$
-P(A\ge k)=\prod_{i=1}^{k}c_i
+P(A_\gamma\ge k)=\prod_{i=1}^{k}c_i,\qquad 1\le k\le\gamma
 $$
 
-期望接受长度可写成这些前缀存活概率之和。早期位置的一次错误会让整个后缀失效，所以训练和评测都不能只看逐 token accuracy。
+期望接受的草稿数为 $E[A_\gamma]=\sum_{k=1}^{\gamma}P(A_\gamma\ge k)$。用 $C_\gamma$ 表示本轮新增提交的 token 数，它不包含本轮开始时已有的 anchor。没有 EOS 或长度上限截断时，拒绝处还会产生一个修正 token，或者在全部接受后产生一个 bonus token，因此 $C_\gamma=A_\gamma+1$；即使一个草稿都未接受，仍能推进一个 token。这与 [DFlash 论文 §3.1](https://arxiv.org/html/2602.06036v1#S3.SS1)包含 bonus token 的每轮推进长度一致。早期位置的一次错误会让整个后缀失效，所以训练和评测都不能只看逐 token accuracy。
 
 ## 训练目标怎样贴近真实推测循环
 
@@ -217,14 +219,16 @@ $$
 2. 后部位置更难预测，完整前缀存活概率下降；
 3. target verification 的 token 数、attention workspace 与采样成本增加。
 
-因此应优化实际每 token 成本，而非最大接受长度：
+因此应优化每个**新增提交 token**的平均成本。对没有终止截断的轮次，用同一工作负载下的平均每轮耗时估算：
 
 $$
 \gamma^*=\arg\min_{\gamma}
-\frac{T_{draft}(\gamma)+T_{verify}(\gamma,B,L)}{E[A_\gamma]}
+\frac{T_{draft}(\gamma)+T_{verify}(\gamma,B,L)}{1+E[A_\gamma]}
 $$
 
-其中 $B$ 是并发 batch，$L$ 是上下文长度。低并发下，verification 的宽度可能几乎免费，较大 block 更有利；高并发下，额外候选会挤占其他请求的计算，较小 block 反而有更好的集群吞吐和尾延迟。
+其中 $B$ 是并发 batch，$L$ 是上下文长度，$\gamma$ 始终指候选数；DFlash 含一个 anchor 槽位的配置为 $b=\texttt{block\_size}=\gamma+1$。若接受前缀中已出现 EOS，或达到输出长度上限，就不再机械追加一个 token，此时分母应使用实际测得的 $E[C_\gamma]$。完整测量还应把采样、mask 与 KV 提交等开销计入每轮时间。
+
+漏掉额外 token 甚至可能选错块长。例如两个配置的平均接受草稿数为 0.2、0.3，每轮耗时为 1 ms、1.3 ms：按“耗时/接受草稿数”会偏向后者（5 对 4.33 ms），按真实推进量计算却是前者更好（约 0.83 对 1 ms/token）。低并发下，verification 的宽度可能几乎免费，较大 block 更有利；高并发下，额外候选会挤占其他请求的计算，较小 block 反而有更好的集群吞吐和尾延迟。
 
 论文观察到：用大 block 训练的 drafter 通常能向下兼容较小的推理 block，但反向泛化较差。这为动态 block scheduling 留出空间，不过上线前仍要逐个 checkpoint 与 workload 验证，不能把跨长度泛化当成协议保证。
 

@@ -3,7 +3,7 @@ layout: post
 title: "FlashAttention-3：用异步流水榨出 Hopper 的 Attention 性能"
 subtitle: "从 TMA、WGMMA、Warp Specialization 到更准确的 FP8 Attention"
 date: 2026-06-23 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: attention-long-context
@@ -340,10 +340,13 @@ s_Q=\frac{\max|Q|}{q_{max}}
 $$
 
 $$
-Q_q=\operatorname{round}(Q/s_Q)
+Q_q=\operatorname{cast}_{\mathrm{E4M3}}(Q/s_Q),\qquad
+\widehat Q=s_Q Q_q
 $$
 
-若 Q 中只有少量极端 outliers，$s_Q$ 被它们主导，普通 block 的量化 step 过粗。
+这里 $q_{max}=448$ 是 E4M3 的最大有限值，$\operatorname{cast}_{\mathrm{E4M3}}$ 表示舍入到该 FP8 格式的可表示浮点值，$\widehat Q$ 是反量化近似。示意采用最近值舍入和有限值饱和；实际 kernel 的舍入、溢出及下溢规则仍需核对。若整个块为零，可令 scale 为 1、量化结果为零，避免除以零。[NVIDIA FP8 primer](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/examples/fp8_primer.html)给出了 E4M3 的格式与数值范围。
+
+FP8 的相邻数值间距随指数变化，不是一张间距固定的整数网格。若少量 outliers 主导全 tensor 的 $s_Q$，其他块的较小值可能被缩到 subnormal 区域甚至下溢为零；这时局部 scale 有助于更充分利用可表示范围。在都处于正常数范围时，单纯缩放并不保证提高相对精度，收益需看实际数值分布。
 
 FA3 本来就按 $B_r\times d$ 或 $B_c\times d$ tiles 处理 Q/K/V，因此为每块保存独立 scale：
 

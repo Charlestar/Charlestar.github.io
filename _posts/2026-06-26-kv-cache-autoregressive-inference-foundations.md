@@ -3,7 +3,7 @@ layout: post
 title: "KV Cache：自回归推理为什么必须保存历史状态"
 subtitle: "从重复计算、每 Token 显存到 MHA/GQA/MQA 与缓存生命周期"
 date: 2026-06-26 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: kv-cache-memory
@@ -831,7 +831,10 @@ D: cancelled mid-step
 | Prefix caching | 是 | 共享时减少重复物理块 | 通常仍读共享历史 | hash/refcount/eviction |
 | KV 量化 | 否 | 是 | 是 | 量化误差与转换 |
 | Offload | 否 | 降低 GPU 常驻 | 可能增加传输 | PCIe/网络延迟 |
-| Sparse/window attention | 是或部分 | 是 | 是 | 模型约束或近似 |
+| 滑动窗口 attention | 可减少窗口外计算，取决于实现 | 是，可淘汰以后不再访问的窗口外 KV | 是，读取窗口内 KV | 模型的固定可见窗口约束 |
+| 内容相关的动态稀疏 attention（如 DSA） | 可减少主 attention 计算，仍有索引成本 | 不一定；通常仍保存全历史主 KV，并新增索引 cache | 可减少主 KV 读取，另有索引扫描 | 索引、选择开销及模型质量折中 |
+
+这两种“稀疏”不能用同一套容量假设。滑动窗口规则可以证明某些历史位置今后永远不会再被该层访问，因此能够回收它们的 KV；混合全局层、窗口层的模型仍需分别计数。动态选择则依赖当前 query，今天没有被选中的 token，下一轮可能再次进入 Top-k。DeepSeek-V3.2-Exp 的[官方参考实现](https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/main/inference/model.py)既为 indexer 分配覆盖 `max_seq_len` 的 `k_cache`，也为 MLA 保存全历史的 `kv_cache` 与 `pe_cache`。因此稀疏主 attention 的算量或读取量下降，不能直接换算成同倍率的常驻缓存节省。
 
 明确资源路径后，才能选正确指标。例如 PagedAttention 的主要收益是提升可用 token capacity 和并发，不必期待单请求短上下文 kernel 一定更快。
 

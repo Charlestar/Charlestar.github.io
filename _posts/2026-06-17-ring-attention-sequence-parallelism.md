@@ -3,7 +3,7 @@ layout: post
 title: "Ring Attention：把超长序列沿设备环流动"
 subtitle: "从分块 Online Softmax 到 KV 通信与本地 Attention 计算重叠"
 date: 2026-06-17 09:00:00 +0800
-last_modified_at: 2026-08-09
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: attention-long-context
@@ -599,7 +599,17 @@ Megatron 风格的 sequence parallel 常把 LayerNorm、Dropout 等 tensor-paral
 
 Ring Attention 则让 attention 本身的全局 K/V blocks 沿环移动，使单条 sequence 的 dense attention 跨设备完成。它通常更接近今天所说的 context parallelism。
 
-还有 All-to-All 型方法会重排 sequence/head 维，让每张卡拿到完整 head 的部分 token，再运行本地 attention。它们与 ring 的通信 primitive、拓扑敏感性和 causal 负载平衡不同。
+还有 All-to-All 型方法会重排 sequence/head 维。以 [DeepSpeed-Ulysses](https://github.com/deepspeedai/DeepSpeed/blob/master/blogs/deepspeed-ulysses/README.md) 的 MHA 布局为例，省略 batch 维，设序列长度为 $N$、head 数为 $H$、设备数为 $P$，并假设相关维度可整除：
+
+```text
+attention 前：每卡 [N/P, H,   d]    部分序列、全部 heads
+      All-to-All
+attention 中：每卡 [N,   H/P, d]    完整序列、部分 heads
+      本地 attention + All-to-All
+attention 后：每卡 [N/P, H,   d]    恢复按序列分片
+```
+
+每卡在完整序列上独立计算自己负责的 heads，所以本地 kernel 拿得到全局 dense attention 所需的 K/V。GQA/MQA 还需要考虑 Q heads 与 KV heads 数不同带来的切分、分组或复制约束，不能直接把上面的 $H/P$ 套到任意模型。Ulysses 与 ring 的通信 primitive、拓扑敏感性和 causal 负载平衡也不同。
 
 选型时不要只比较名称，要画出：
 

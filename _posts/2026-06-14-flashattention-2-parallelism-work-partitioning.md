@@ -3,7 +3,7 @@ layout: post
 title: "FlashAttention-2：从 IO-aware 到更好的并行划分"
 subtitle: "为什么同一个精确注意力算法，还能通过 Thread Block 与 Warp 重排再快一倍"
 date: 2026-06-14 09:00:00 +0800
-last_modified_at: 2026-09-02
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: attention-long-context
@@ -220,10 +220,24 @@ dV=P^TdO,
 \quad dS=P\circ(dP-D)
 $$
 
+这里沿用 $S=QK^T$、$P=\operatorname{softmax}(S)$、$O=PV$ 的单 head 记号，暂略缩放与 dropout。$D$ 是 Softmax 反传对每个 query row 计算的归约项，不是 head dimension $d$：
+
+$$
+D_i=\sum_{j=1}^{N_k}P_{ij}(dP)_{ij}
+=\sum_{a=1}^{d_v}O_{ia}(dO)_{ia},\qquad
+D\in\mathbb R^{N_q}
+$$
+
+其中 $N_q,N_k$ 分别为 query 与 key 的位置数，$d_v$ 为每个 Value head 的维度。因此 $dS_{ij}=P_{ij}((dP)_{ij}-D_i)$ 中，$D_i$ 沿同一 query row 的全部 key 位置广播。由 $dP=dOV^T$、$O=PV$ 可将第一个求和换成第二个求和；这使 backward 能直接从已保存的 $O$ 和输入梯度 $dO$ 预计算 $D$，随后再逐块重建 $P$，无需保存完整概率矩阵。它对应 [FA2 论文 Algorithm 2](https://tridao.me/publications/flash2/flash2.pdf)中的 `rowsum(dO ∘ O)`。
+
+继续通过 score 的矩阵乘法反传可得：
+
 $$
 dQ=dSK,
 \quad dK=dS^TQ
 $$
+
+若实际定义 $S=\alpha QK^T$（通常 $\alpha=1/\sqrt d$），则这两项分别为 $dQ=\alpha dSK$、$dK=\alpha dS^TQ$；缩放也可由实现吸收到中间梯度中。
 
 FA2 的 backward 让一个 worker 负责 attention matrix 的 column block，也就是一块 K/V。这样它可以在片上累积对应的 $dK_j,dV_j$，避免不同 worker 反复合并这两项。
 

@@ -3,7 +3,7 @@ layout: post
 title: "SpecForge：把 EAGLE3 从训练样本交付到 SGLang"
 subtitle: "理解特征对齐、Training-Time Test 与草稿模型的部署契约"
 date: 2026-05-27 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: speculative-decoding
@@ -27,7 +27,7 @@ SpecForge 的作用，就是把这些分散的约束组织成一条可复现的�
 
 ## 先看 checkpoint 最终要参与什么计算
 
-设目标模型为 \(p\)，EAGLE3 草稿模型为 \(q\)。一次生成循环可以简化为：
+设目标模型为 $$p$$，EAGLE3 草稿模型为 $$q$$。一次生成循环可以简化为：
 
 ```text
 目标模型 prefill / 上一轮验证
@@ -82,7 +82,7 @@ EAGLE3 的变化不是简单地“再加几个隐藏层”，而是同时完成�
 
 ## 多层特征融合到底融合了什么
 
-假设目标模型隐藏维度为 \(d\)，从低层、中层、高层分别抽取同一 token 位置的向量：
+假设目标模型隐藏维度为 $$d$$，从低层、中层、高层分别抽取同一 token 位置的向量：
 
 $$
 h_t^{low},\quad h_t^{mid},\quad h_t^{high}\in\mathbb{R}^{d}
@@ -96,28 +96,29 @@ $$
 
 不同深度的表征承担的功能并没有严格边界，但可以用一个直观视角理解：较低层保留更多局部词法和句法信息，中间层逐渐组织上下文，高层更直接地服务于下一个 token 的预测。融合并不是把信息简单平均，而是让训练学出在不同场景下如何组合这些视角。
 
-token embedding 仍然不可缺少。drafter 需要知道已经选择了哪个候选 token，同时读取融合特征，才能继续向前预测。概念上可写成：
+token embedding 仍然不可缺少，而且必须与目标特征错开一个位置。这里的 $g_t$ 表示目标模型处理输入位置 $t$ 后得到的融合特征；目标模型已经用该位置的 logits 采样了 anchor token $x_{t+1}$。drafter 需要同时知道 $g_t$ 与这个已选 token，才能起草再下一个位置。省略历史序列和内部 cache 的记号后，一步计算写作：
 
 $$
-a_{t+1}=D(e(x_t), g_t)
+a_{t+1}=D(e(x_{t+1}),g_t),\qquad
+\hat{x}_{t+2}\sim\operatorname{softmax}(\operatorname{LMHead}(a_{t+1}))
 $$
 
-其中 \(D\) 是很浅的 drafter，\(e(x_t)\) 是 token embedding，\(a_{t+1}\) 是它的输出表示。输出经过 LM head 后得到下一 token 的草稿分布。
+其中 $D$ 是很浅的 drafter，$e(x_{t+1})$ 是 anchor 的 embedding，$a_{t+1}$ 是对应位置的草稿输出表示。$x_{t+1}$ 已由目标模型采样，首个新增 draft 候选是 $\hat{x}_{t+2}$。[EAGLE-3 论文 §3.1](https://arxiv.org/html/2503.01840v2#S3.SS1)用 “How can → I → do” 展示了这个对齐：目标模型先给出 “I”，drafter 再将 “can” 的融合特征与 “I” 的 embedding 配对，预测 “do”。
 
 真正困难的地方出现在第二个草稿步。
 
 ## 第二步为什么没有“正确隐藏状态”可用
 
-在目标模型刚完成的位置 \(t\)，低、中、高层真实特征都已经存在，可以形成 \(g_t\)。drafter 由此生成候选 \(\hat{x}_{t+1}\)。
+在目标模型刚完成的位置 $t$，真实多层特征 $g_t$ 与已采样的 anchor $x_{t+1}$ 都已经存在。drafter 由二者得到 $a_{t+1}$，并提议 $\hat{x}_{t+2}$。
 
-如果继续生成 \(\hat{x}_{t+2}\)，目标模型此时还没有验证 \(\hat{x}_{t+1}\)，自然也没有它对应的真实多层特征 \(g_{t+1}\)。如果为了取得这个特征先运行一次目标模型，推测解码就失去了减少目标模型串行前向的意义。
+如果继续起草 $\hat{x}_{t+3}$，理想输入应包含 $g_{t+1}$。但目标模型虽然已经**输出**了 $x_{t+1}$，还没有把它作为**输入**处理，因此 $g_{t+1}$ 尚不存在。如果专门为取得这个特征运行一次目标模型，就会重新引入希望消除的目标模型串行前向。
 
-EAGLE3 在后续草稿步中使用前一步 drafter 输出 \(a_{t+1}\) 代替不存在的 \(g_{t+1}\)：
+EAGLE3 在后续草稿步中用前一步 drafter 输出 $a_{t+1}$ 代替尚不存在的 $g_{t+1}$，并与刚起草的下一 token 配对：
 
 ```text
-第 1 步：真实目标特征 g_t       + token x_t       -> a_(t+1) -> x̂_(t+1)
-第 2 步：drafter 输出 a_(t+1)   + token x̂_(t+1)  -> a_(t+2) -> x̂_(t+2)
-第 3 步：drafter 输出 a_(t+2)   + token x̂_(t+2)  -> a_(t+3) -> x̂_(t+3)
+第 1 步：真实目标特征 g_t       + anchor x_(t+1) -> a_(t+1) -> x̂_(t+2)
+第 2 步：drafter 输出 a_(t+1)   + token x̂_(t+2) -> a_(t+2) -> x̂_(t+3)
+第 3 步：drafter 输出 a_(t+2)   + token x̂_(t+3) -> a_(t+3) -> x̂_(t+4)
 ```
 
 这解释了为何普通 teacher forcing 不够。若训练只覆盖第一行，模型看到的始终是真实目标特征和真实 token；推理时第二行开始，输入却来自模型自己的输出。训练分布与推理分布发生偏移，越深的候选越容易失真。

@@ -3,7 +3,7 @@ layout: post
 title: "FlashInfer Sorting-Free Sampling：无需显式排序的 GPU 采样"
 subtitle: "从目标分布到 Dual Pivot Rejection Sampling"
 date: 2026-05-24 12:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: gpu-runtime-precision
@@ -90,7 +90,7 @@ $$
 常见的 `top_k_first` 语义是：
 
 1. 先保留 top-k；
-2. 在这 $k$ 项内部重新考虑累计概率并应用 top-p；
+2. 将这 $k$ 项重新归一化，再计算累计概率并应用 top-p；
 3. 对最终集合归一化采样。
 
 `joint` 则在 rejection 的每一轮同时检查 top-k 与 top-p 条件。两者的候选集合不一定相同，因此服务配置、回归测试和缓存 key 都要记录 `filter_apply_order`，不能只记录 $k,p$ 两个数。
@@ -106,19 +106,26 @@ prob : .40  .30  .20  .10
 
 ## 传统排序路径为什么昂贵
 
-直观实现大致是：
+下面的伪码明确采用 `top_k_first`：输入是一行合法的归一化概率，$1\le k\le V$，$0<\text{top\_p}\le1$。先把 Top-k 集合归一化，再保留累计质量首次达到或超过阈值的最小前缀：
 
 ```python
 sorted_probs, sorted_idx = sort(probs, descending=True)
 keep_k = arange(vocab_size) < top_k
-keep_p = cumsum(sorted_probs) <= top_p
-mask = combine(keep_k, keep_p)
-filtered = where(mask, sorted_probs, 0)
+p_k = where(keep_k, sorted_probs, 0)
+p_k = p_k / p_k.sum()
+cumulative = cumsum(p_k)
+previous_cumulative = concatenate([zeros(1), cumulative[:-1]])
+mask = keep_k & (previous_cumulative < top_p)
+if top_p == 1:
+    mask = keep_k
+filtered = where(mask, p_k, 0)
 sampled_sorted_index = multinomial(filtered)
 token_id = sorted_idx[sampled_sorted_index]
 ```
 
-真实代码还要确保 top-p 至少保留一个 token、处理 ties，并将 mask 恢复到原词表顺序。
+比较的是当前 token **之前**的累计概率，因此跨过阈值的那个 token 仍会保留。例如不做 Top-k 截断时，`[.4, .3, .2, .1]` 在 `top_p=.6` 下应保留 A、B，最终概率为 `4/7`、`3/7`；若误用 `cumsum <= top_p`，就会只留下 A，改变采样分布。`top_p=1` 分支表示不做 nucleus 截断，也避免累计浮点误差影响这个边界。
+
+这个示意实现直接将采样得到的排序位置映射回 token ID，不必恢复整张 mask；需要输出原词表布局的过滤概率时才做逆映射。相同概率下的边界 ties 还需遵守所接入 API 的契约。FlashInfer 的[采样算法说明](https://flashinfer.ai/2025/03/10/sampling.html)与[组合采样接口](https://docs.flashinfer.ai/generated/flashinfer.sampling.top_k_top_p_sampling_from_probs.html)应一起核对，不能将本段伪码直接当作 `joint` 模式的实现。
 
 对词表大小 $V$，全排序通常需要 $O(V\log V)$ 工作以及多轮全局内存交换。即使 radix sort 的渐进形式不同，它仍会为了得到完整顺序搬运远多于“一个样本”所需的数据。
 

@@ -3,7 +3,7 @@ layout: post
 title: "DeepEP：把 MoE 的 Dispatch 与 Combine 做成专用数据面"
 subtitle: "理解变长通信、两级互联、低延迟路径、FP8 传输与计算重叠"
 date: 2026-07-23 09:00:00 +0800
-last_modified_at: 2026-09-03
+last_modified_at: 2026-09-09
 author: iStar
 catalog: true
 series: moe-communication
@@ -327,13 +327,22 @@ $$
 - grouped GEMM 工作量；
 - combine 最晚完成时间。
 
-`num_max_tokens_per_rank` 如果只按平均 $N_a/P_e$ 设置，会在热点出现时低估。若按“所有 token 都去同一 rank”的理论最坏值设置，又可能浪费大量显存。
+这里必须把 source 输入上界与 destination 接收负载分开。以 DeepEP V2 的固定提交 [`01dc3aa`](https://github.com/deepseek-ai/DeepEP/blob/01dc3aaac82068020353dce2c302e38153c0bfaa/csrc/elastic/buffer.hpp)为准，`dispatch` 从输入 `x` 读取 `num_tokens`，并检查它不超过 `num_max_tokens_per_rank`。因此这个参数限制的是**单次 dispatch 中每个 source rank 输入的 token 数**，所有 ranks 必须使用同一个上界 $M$：
+
+$$
+M=\texttt{num\_max\_tokens\_per\_rank}
+\ge\max_r N^{input}_r
+$$
+
+上面的 $L_r$ 则是 destination rank 的逻辑 assignment 数，$N_a/P_e$ 是平均接收 assignments，均不能代替 $M$。例如 4 个 source ranks 各输入 128 个 token、Top-2 时，$M=128$ 已覆盖源输入，总 assignments 为 1024、平均每个 destination 为 256。若所有 token 都选中同一 destination 上的两个 experts，该 rank 可收到 512 个去重 token，并在本地展开为 1024 个 expert 输入；这些接收计数没有把 source 上界变成 512 或 1024。
+
+通信区容量应通过该版本的 buffer-size API，使用 $M$、rank 数、hidden size、Top-k、dtype 和拓扑等参数计算；接收/展开 tensor 还受路由去重、每个 expert 的 alignment 与同步分配模式影响。[同一提交的 `EPHandle`](https://github.com/deepseek-ai/DeepEP/blob/01dc3aaac82068020353dce2c302e38153c0bfaa/deep_ep/buffers/elastic.py)分别保存 `num_recv_tokens`、`num_expanded_tokens` 和 per-expert counts，正是为了区分这些口径。接收热点依然会增加临时空间和尾延迟，但不能通过混用参数单位来估计。
 
 工程上可以组合：
 
-- 从真实 trace 提取 rank-load 分位数；
-- 保留受控 headroom；
-- 超过上界时 chunk dispatch，而非写越界；
+- 从真实 trace 分别提取 source token 数、destination 去重 token 数和 expert assignments 的分布；
+- 依据 buffer API 计算容量，并为上层可控的临时空间保留 headroom，不能把流量分位数当成写入硬上界；
+- source 输入超过 $M$ 时，按全组一致的通信次序分 chunk，并为每次 dispatch 保留对应的 combine handle；
 - 使用模型允许的 expert replica / placement balancing；
 - 对极端 overload 做 admission control；
 - 记录 buffer overflow 或 fallback，而不是静默 dropping。
