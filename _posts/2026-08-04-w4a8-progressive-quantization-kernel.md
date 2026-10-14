@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "W4A8：4-bit Weight 怎样喂给 8-bit Tensor Core"
-subtitle: "从 Progressive Quantization、寄存器解包到 QServe 的系统协同设计"
+subtitle: "从两级整数表示、119 保护范围与 byte lane 到 QServe 的 GEMM 和 SmoothAttention"
 date: 2026-08-04 09:00:00 +0800
 last_modified_at: 2026-10-15
 author: iStar
@@ -13,461 +13,428 @@ mathjax: true
 tags: [模型量化, GPU优化, LLM推理]
 ---
 
-W4A16 与 W8A8 各自只解决了一半问题。W4A16 把 weight 压到 4-bit，适合降低小 batch Decode 的权重带宽，却要在计算前恢复到 FP16/BF16；W8A8 可以直接利用 INT8 Tensor Core，但 weight 容量和带宽仍是 8-bit。W4A8 看起来正好取两者之长：4-bit weight storage，加上 8-bit activation 与高吞吐矩阵乘。
+4-bit 权重首先节省的是存储与读取字节数，但读取出来的 nibble，不一定就是矩阵乘指令能够直接消费的操作数。QServe 的整数 W4A8 路线选择了一条明确的桥：把 packed UINT4 在寄存器中恢复成 signed INT8，与 INT8 激活相乘、用 INT32 累加，最后结合尺度输出 FP16。
 
-真正实现时，4-bit weight 与 8-bit activation 不能直接因为名字相邻就相乘。以 QServe 为代表的整数 W4A8 路径，会先把 packed UINT4 weight 在寄存器中恢复成一个 INT8 中间表示，再执行 INT8 × INT8 Tensor Core GEMM。weight 解包、group scale、zero point 与 layout conversion 都落在 GEMM 热循环附近，任何低效步骤都可能吃掉 4-bit 带来的带宽收益。
+这条桥不能只在数学上成立。恢复每组权重的移位、乘法、零点修正如果太昂贵，Tensor Core 就会等待操作数，省下的带宽反而被转换开销吃掉。因此，QServe 把量化规则、权重布局和 CUDA 指令放在一起设计。
 
-所以 W4A8 的核心问题不是“能不能把模型保存成 4-bit”，而是：
+下面讨论的是 QServe 论文在 A100/L40S 上研究的整数 W4A8，以及一个固定版本的官方 kernel。它不是所有名为 W4A8 的实现都采用的通用路线；后面会看到，FP8 activation 的同名 recipe 就有另一套数值合同。
 
-```text
-4-bit storage format
-  → load and unpack efficiently
-  → reconstruct an 8-bit compute operand
-  → keep correction work off the critical main loop
-  → execute Tensor Core GEMM
-  → apply scales and epilogue
-```
+## 1. 同一层计算中有四种不同的精度
 
-这是一项 quantization algorithm、packed layout 与 GPU kernel 的共同设计。
-
-## W4A8 不是唯一一种格式
-
-`W4A8` 只表示 weight 使用 4-bit、activation 使用 8-bit，并没有说明整数还是浮点：
-
-| 名称 | Weight storage | Activation | 可能的计算路径 |
-| --- | --- | --- | --- |
-| Integer W4A8 | INT4/UINT4 | INT8 | weight 展开为 INT8，执行 INT8 Tensor Core GEMM |
-| FP8 W4A8 | INT4/FP4 或带 scale 的 4-bit weight | FP8 | 转为 backend 支持的 FP8/低精度 operand 后计算 |
-| W4A16 | INT4/UINT4 | FP16/BF16 | 在线反量化 weight，执行高精度 GEMM |
-
-QServe 论文中的 QoQ 是 `W4A8KV4`：4-bit weight、INT8 activation、4-bit KV Cache。当前 TensorRT-LLM / Model Optimizer 中也存在名为 W4A8 AWQ 的 recipe，其 activation 可以是 FP8。两者不能只凭 `W4A8` 字符串互换 artifact 或推断 kernel。
-
-阅读配置时至少要继续问：
-
-- 4-bit 是 signed、unsigned、integer 还是 floating encoding？
-- activation 的 8-bit 是 INT8、E4M3 还是其他格式？
-- 计算 operand 是多少 bit，accumulator 是什么 dtype？
-- weight 在 main loop 中怎样解包、反量化或重编码？
-- scale 是 per-channel、per-group、per-token 还是 block-wise？
-
-位宽只是契约的开头，不是契约本身。
-
-## 用 Roofline 理解为什么需要 W4A8
-
-线性层可以写成：
+沿用本系列的布局：
 
 $$
-Y_{M\times N}=X_{M\times K}W_{K\times N}
+Y_{M\times N}=X_{M\times K}W_{K\times N}.
 $$
 
-在 LLM Serving 中，$K$、$N$ 通常很大，$M$ 随阶段和 batch 改变：
+$$M$$ 是本次参与计算的 token 行数，$$K$$ 是输入与 reduction 维，$$N$$ 是输出通道。decode 的小 $$M$$ 计算往往需要反复读大权重；prefill 或更高并发使 $$M$$ 增大，同一权重被更多行复用，计算吞吐就更重要。
 
-- 小 batch Decode 的 $M$ 很小，GEMM 常受 weight memory bandwidth 限制；
-- Prefill 或高并发 Decode 的 $M$ 变大，weight 被更多 token 复用，计算吞吐更重要。
+W4A16 减少权重流量，但典型路径要把权重恢复为 FP16/BF16；W8A8 能利用 INT8 计算，权重流量却仍是 8-bit。整数 W4A8 希望兼顾两者，但必须把格式转换成本算进去。QServe 论文的 Roofline 是这个设计的动机，不是对所有 GPU 和 shape 的速度保证。[QServe v3，§3.1–3.2](https://arxiv.org/html/2405.04532v3#S3)
 
-这解释了两类传统路径的优势区间：
+具体到本文的固定 GEMM 路径，可以分清四层：
 
-```text
-W4A16:
-  weight traffic 更小
-  → 小 M 时有利
-  → 大 M 时 FP16/BF16 compute 和反量化可能限制吞吐
-
-W8A8:
-  weight traffic 比 W4 多
-  → 小 M 时带宽优势有限
-  → 大 M 时可利用 INT8 Tensor Core 吞吐
-```
-
-理想 W4A8 同时减少 weight traffic，并保留 8-bit Tensor Core compute。但 Roofline 只计算字节与峰值算力，没有自动计入 unpack、zero-point correction、scale multiplication、register pressure 和额外指令。W4A8 能否接近这条理想曲线，取决于 kernel 是否把转换成本压到足够低。
-
-QServe 论文在其硬件、模型和 batch 假设下给出了具体交叉点与吞吐结果；这些数字用于说明设计动机，不应直接套到其他 GPU、shape 或 runtime 版本。
-
-## Storage Precision 不等于 Compute Precision
-
-一个 UINT4 weight 只占半个 byte，通常两个值打包进一个 byte：
-
-```text
-byte: [ high_nibble | low_nibble ]
-       weight_1       weight_0
-```
-
-但 Ampere/Hopper 上的经典 QServe W4A8 路径并不是让 tensor core 直接接受“一个 UINT4 operand 和一个 INT8 operand”。kernel 要先把 nibble 解包为 8-bit values，再用 INT8 MMA 指令计算。
-
-因此需要分别描述：
-
-```text
-storage dtype: UINT4 / INT4
-intermediate compute operand: INT8
-activation operand: INT8
-dot-product accumulator: wider integer
-epilogue/output: typically FP16 in QServe
-```
-
-这与 AWQ 常见的 W4A16 类似：checkpoint 是 4-bit，只说明 weight storage；若运行时先恢复成 FP16 再 GEMM，乘法精度仍是 FP16。评估低精度系统时必须把 storage、operand、accumulator 与 output 四个层次分开。
-
-## 为什么 Naive Group Dequantization 很慢
-
-GPU GEMM 通常把输出 tile 固定在寄存器或 accumulator 中，沿 reduction 维 $K$ 反复迭代。这段迭代就是 main loop：
-
-```text
-for each K tile:
-  load activation tile
-  load weight tile
-  transform operands if needed
-  tensor-core MMA
-
-epilogue:
-  apply scale / bias / activation
-  store output
-```
-
-main loop 会执行很多次，里面每增加一条依赖链都会被重复支付。W8A8 可以把 INT8 operands 直接送入 tensor core，大部分 scale 工作放在 epilogue。Naive W4A16 则需要在每个 K tile 中把 4-bit weight 恢复为 FP16；Naive per-group W4A8 也要解包、减 zero point、乘 group scale，再形成 INT8 operand。
-
-Tensor Core 的峰值吞吐很高，而普通 CUDA Core 上的标量/向量转换、地址运算和整数处理相对容易成为瓶颈。最终可能出现：
-
-```text
-Tensor Core 等待 operand
-→ theoretical low-bit TOPS 很高
-→ 实际 kernel 被 dequantization main loop 限制
-```
-
-这就是为什么单纯把 group size 调小以提高精度，可能同时让 scale/zero metadata 与 dequantization 工作变多。
-
-## Progressive Group Quantization 的两级表示
-
-QServe 的 QoQ 不直接从浮点 weight 得到“任意 group INT4 再恢复 FP16”，而是建立一个适合 INT8 compute 的两级表示。
-
-第一层先把浮点 weight 按较粗粒度量化为 INT8 中间值：
-
-$$
-W\approx S^{(0)}Q^{(0)}_{s8}
-$$
-
-其中 $S^{(0)}$ 是第一层浮点 scale，$Q^{(0)}_{s8}$ 是希望在计算时恢复出的 signed INT8 weight。
-
-第二层再把这个 INT8 中间值按 group 压成 UINT4：
-
-$$
-Q^{(0)}_{s8}
-\approx
-S^{(1)}_{u8}
-\left(Q^{(1)}_{u4}-Z^{(1)}_{u4}\right)
-$$
-
-组合后：
-
-$$
-W\approx
-S^{(0)}
-S^{(1)}
-\left(Q^{(1)}_{u4}-Z^{(1)}\right)
-$$
-
-这些 $S$ 是按对应轴广播的逐元素 scale，不是可任意左乘权重的普通矩阵。沿本文 $W\in\mathbb R^{K\times N}$ 约定，可明确写成：
-
-$$
-\hat W_{kn}=s^{(0)}_n\,s^{(1)}_{g(k),n}
-\left(q^{(1)}_{kn}-z^{(1)}_{g(k),n}\right)
-$$
-
-其中 $g(k)$ 是 input/reduction 维上的 group，$s^{(0)}$ 沿 output channel 定义；$s^{(1)}$ 与 zero point 按 K-group/output channel 定义。第二级重建是近似值，不保证逐元素恢复第一次量化的原 INT8 codes。[QServe §4.1、式 (4)–(5)](https://arxiv.org/html/2405.04532v3)
-
-这里两级 scale 的职责不同：
-
-- $S^{(0)}$ 把最终 INT8 dot-product 对应回浮点 weight 范围，适合延后到 epilogue；
-- $S^{(1)}$ 把每个 UINT4 group 恢复成 INT8 中间 operand，必须在使用该 group 时处理；
-- $Z^{(1)}$ 描述非对称 UINT4 group 的 zero point。
-
-运行时无需把 weight 完整恢复成 FP16。它只需高效地把 packed UINT4 重建为 INT8 operand，随后执行：
-
-$$
-Q_X^{int8}Q_W^{int8}
-$$
-
-这就是 progressive quantization 的系统价值：第二级反量化的目标不是原始浮点 weight，而是 tensor core 可以直接消费的 INT8 weight。
-
-## 为什么需要保护 INT8 范围
-
-两级量化有一个容易忽视的边界：UINT4 值经 scale 与 zero point 恢复后，必须仍落在 signed INT8 范围。
-
-例如，某组 INT8 中间 weight 的范围近似为 $[-113,120]$。将它非对称压到 $[0,15]$ 后，整数化的 group scale 为 16、zero point 为 7。按先舍入再加整数 zero point 的约定，$q=\operatorname{round}(120/16)+7=15$，反量化得到 $(15-7)\times16=128$，已经超过 INT8 最大值 127。这里 round 在 7.5 处取 8；若改变 tie-breaking 或把 zero point 移入 round，边界结果可能不同，因此 exporter 与 kernel 的运算顺序也属于数值契约。
-
-可以在运行时 saturation，但 saturation 指令和误差都不是免费的。QServe 选择在第一级量化时把对称 INT8 范围从常见的 $[-127,127]$ 收紧到保护范围 $[-119,119]$，以约束第二级恢复后的溢出风险。
-
-这个细节说明：
-
-```text
-两个单独看起来合法的量化层级
-≠ 组合后一定得到合法的 compute operand
-```
-
-多级量化必须验证所有 code、scale、zero point 的最坏情况，而不只是随机抽样后的平均误差。
-
-## 解包需要为 Tensor Core 的消费顺序服务
-
-普通 checkpoint 常按逻辑矩阵顺序保存 weight，但 GPU threads 获取 MMA fragment 的顺序并不等同于连续矩阵顺序。4-bit storage 与 8-bit compute 还带来一个额外问题：线程按相同 byte 数取数时，拿到的 4-bit element 数量是 INT8 的两倍，通用 load/permute 路径未必能直接得到每个线程需要的 fragment。
-
-QServe 采用 compute-aware weight reordering：离线把 weight 按 kernel 中线程和 MMA tile 的实际消费顺序重排。运行时每个线程可以读取连续的 packed word，用少量逻辑指令并行展开多个 nibbles，而不是在 main loop 中进行复杂 pointer arithmetic 和跨线程重排。
-
-这类 layout 有三个含义：
-
-1. packed artifact 与 kernel 强绑定，不能当成通用 row-major INT4；
-2. 重排应在导出或 engine build 阶段完成，不能放到请求热路径；
-3. kernel version、tile shape、GPU architecture 变化时，cache key 也要变化。
-
-一个数学上正确的 INT4 checkpoint，若 layout 与 kernel contract 不一致，会得到完全错误的输出；若运行时临时转 layout，则会增加启动时间、峰值内存和部署复杂度。
-
-## Zero Point 为什么最好离开 Main Loop
-
-非对称 group quantization 通常需要：
-
-$$
-q_w-z_w
-$$
-
-若对每个 weight 在 main loop 里逐个减 zero point，指令数与依赖都会增加。对 per-channel 情形，可以利用代数展开把修正搬到 epilogue。设某个 output channel 的 zero point 为 $z_w$：
-
-$$
-\sum_k x_k(q_{w,k}-z_w)
-=
-\sum_k x_kq_{w,k}
--z_w\sum_kx_k
-$$
-
-第一项走 tensor core dot product；第二项由 activation 的 row sum 和 zero point 构成，可以独立计算并在 epilogue 修正。
-
-per-group zero point 会随 $K$ group 改变，不能简单地只做一次全局 epilogue 修正。此时 kernel 需要在组边界处理 correction，并尽量使用寄存器级向量指令并行完成。优化的关键不是“完全没有 dequantization”，而是减少 main loop 中低吞吐指令的占比并打破串行依赖。
-
-## Activation 的 INT8 路径从哪里来
-
-W4A8 的另一半是 activation quantization。若 activation 仍是 BF16，kernel 就变成 W4A16，而不是整数 W4A8。
-
-QServe 的 block 边界保持 FP16：线性层输入先量化为 INT8，W4A8 GEMM 使用 INT8 Tensor Core，输出经 epilogue 恢复为 FP16；attention 等路径仍可在 FP16 中计算。这种设计限制了低精度边界，便于与非 GEMM 算子集成。
-
-Activation INT8 仍会遇到 outliers，因此 W4A8 recipe 常组合前文介绍的思路：
-
-- smoothing 把稳定的 channel outlier 迁移到 weight；
-- rotation/reordering 改善 group 内部分布；
-- per-token 或 per-tensor scale 处理请求间变化；
-- 少量敏感模块保留更高精度。
-
-但 4-bit weight 比 INT8 weight 更脆弱。把 activation outlier 迁到 weight 时，迁移过多会扩大某些 weight group 的范围，使 UINT4 rounding error 上升。因此 smoothing 参数要同时优化 activation INT8 与 weight INT4，不能直接复制 W8A8 的 alpha。
-
-## W4A8 与 KV4 是三条不同路径
-
-QServe 的完整名称是 W4A8KV4，但三种 dtype 解决不同资源：
-
-```text
-W4: linear weight capacity and bandwidth
-A8: GEMM operand and compute throughput
-KV4: attention cache capacity and read bandwidth
-```
-
-KV Cache 不参与线性层 W4A8 GEMM。Decode attention 通常要持续读取历史 K/V，算术强度低，长上下文或高并发时容易 memory-bound，所以 KV4 有独立价值。但它也需要单独的 quantization、scale metadata、fused attention kernel 和质量验证。
-
-若只是部署 W4A8 weights/activations，不能宣称已经获得 KV4 容量；若单独打开 KV4，也不会让 MLP GEMM 自动变快。
-
-QServe 为 KV4 引入 SmoothAttention 并针对 attention kernel 做系统优化。这说明 weight、activation 与 KV 的低精度必须逐条闭环，而不是由一个总开关隐式完成。
-
-## 当前 FP8 W4A8 是另一条执行路线
-
-在支持 FP8 Tensor Core 的 GPU 上，一些现代 recipe 把 4-bit weight 与 FP8 activation 组合，也称 W4A8。它的动机仍然是兼顾 weight compression 与 8-bit compute，但数值和 kernel 契约不同：
-
-- activation 要选择 FP8 format 与 scaling recipe；
-- 4-bit weight 需要转换为 kernel 所需的 FP8 或其他 compute representation；
-- accumulator、output 和 epilogue 遵循浮点低精度规则，而不是 INT32 dot-product 规则；
-- backend 的支持矩阵随 GPU architecture、模型和版本变化。
-
-因此看到 `w4a8_awq` 之类配置时，应以该版本官方文档、导出工具与 profiler 为准。不要拿整数 QServe 的两级 UINT4→INT8 公式解释所有 FP8 W4A8，也不要把某个 GPU 上的支持推断到其他架构。
-
-## W4A8、W4A16、W8A8 怎样选择
-
-可以从瓶颈和实现成熟度出发：
-
-| 条件 | 更值得优先验证的路径 | 原因 |
+| 层次 | 表示 | 作用 |
 | --- | --- | --- |
-| 小 batch、weight bandwidth 主导 | W4A16 或 W4A8 | 4-bit weight traffic 更小 |
-| 大 Prefill / 高并发、GEMM compute 主导 | W8A8 或成熟 W4A8 | 8-bit Tensor Core 吞吐更重要 |
-| activation outlier 难以控制 | W4A16 / FP8，或更强校准 | W8A8/W4A8 的 activation 精度风险更高 |
-| runtime 没有优化 W4A8 kernel | W4A16 或 W8A8 | naive dequantization 可能抵消理论收益 |
-| 显存主要被 KV Cache 占用 | 独立评估 KV quantization | weight 从 8-bit 降到 4-bit 不解决主要容量项 |
+| 权重存储 | packed UINT4 | 降低权重容量和读取流量 |
+| 乘法操作数 | INT8 激活与恢复出的 INT8 权重 | 交给目标 MMA 指令 |
+| 点积累加 | INT32 | 容纳整数乘加的部分和 |
+| 输出 | 结合尺度转换为 FP16 | 交给后续浮点算子 |
 
-这不是静态规则。模型 shape、batch scheduler、TP shard、GPU bandwidth、Tensor Core 代际和 attention 占比都会移动交叉点。最终选择必须来自目标硬件上的真实 traffic benchmark。
+沿 $$K$$ 迭代的 GEMM main loop 会反复加载和处理操作数。随 group 改变的参数不能随意拖到最后再处理；可以延后的参数，则应尽量避免在这个循环里重复支付。这正是两级表示与 per-channel/per-group 路径差异的出发点。
 
-## 容量计算要把 Metadata 加回来
+## 2. 两级量化的目标是恢复 INT8 而不是恢复 FP16
 
-4-bit weight 主体为每个参数 0.5 byte，但 group quantization 还需要 scale、zero point、padding 和 alignment。假设每 $G$ 个 weights 保存一个 16-bit scale 与 4-bit zero point，忽略对齐时，平均额外成本近似为：
+对每个输出通道，先用浮点尺度 $$s^{(0)}_n$$ 得到一个 INT8 中间目标 $$q^{(0)}_{kn}$$。第二级把这个目标按 $$K$$ 轴分组，压成 UINT4 code $$u_{kn}$$：
 
 $$
-\frac{2+0.5}{G}\ \text{bytes/weight}
+W_{kn}\approx s^{(0)}_n q^{(0)}_{kn},\qquad
+q^{(0)}_{kn}\approx s^{(1)}_{g(k),n}\left(u_{kn}-z_{g(k),n}\right).
 $$
 
-若 $G=128$，约为 $0.0195$ bytes/weight；若 $G=32$，约为 $0.0781$ bytes/weight。更小 group 往往提高精度，却增加 metadata traffic，并让 kernel 更频繁地切换 scale。
+其中 $$s^{(1)}$$ 是整数 group scale，$$z$$ 是整数零点，$$u\in\{0,\ldots,15\}$$。因此最终重建为：
 
-Progressive quantization 还包含第一级 scales，实际 artifact 大小应从文件与运行时 resident memory 测量。不能简单用参数量乘 0.5 推导进程显存，更不能据此推导最大并发，因为 KV、workspace、graph pool 和 allocator 仍然存在。
+$$
+\widehat W_{kn}
+=s^{(0)}_n s^{(1)}_{g(k),n}\left(u_{kn}-z_{g(k),n}\right).
+$$
 
-## 量化算法怎样保护 4-bit Weight
+$$g(k)$$ 表示输入通道所在组。两个尺度的轴不一样：$$s^{(0)}$$ 沿输出通道定义，$$s^{(1)}$$ 随 $$K$$ 上的组变化。第二级也不保证无损恢复第一次的 INT8 codes，所以不能因为公式中间出现过 INT8，就把最终权重称为第一次量化的精确结果。[QServe v3，§4.1](https://arxiv.org/html/2405.04532v3#S4.SS1)
 
-4-bit 只有 16 个 code，weight 质量比 W8A8 更敏感。一个完整 recipe 通常会组合多种技术。
+若激活已经表示为 $$\widehat X_{mk}=s^X_m a_{mk}$$，其中 $$a$$ 是 INT8 codes，则 per-group 路径计算：
 
-### Group Quantization
+$$
+\widehat Y_{mn}
+=s^X_m s^{(0)}_n\sum_k a_{mk}\widetilde q_{kn},\qquad
+\widetilde q_{kn}=s^{(1)}_{g(k),n}\left(u_{kn}-z_{g(k),n}\right).
+$$
 
-缩小每个 scale 覆盖的范围，让不同 weight groups 不必共享同一动态范围。代价是 metadata 和 dequantization 频率上升。
+主循环只需形成合法的 signed INT8 $$\widetilde q$$，不用完整恢复浮点权重。INT32 累加结束后，$$s^X_m s^{(0)}_n$$ 才进入 epilogue。
 
-### Activation-aware Reordering
+算一组具体数值。取浮点权重 $$[-1.19,-0.40,0.30,1.19]$$，第一级尺度为 $$s^{(0)}=0.01$$，得到目标 codes $$[-119,-40,30,119]$$。为说明第二级，暂采用独立的简化整数编码规则：
 
-用 calibration activation 判断 channel salience，再把相近通道放进同一组。这样极重要通道不会随机与分布完全不同的通道共享 group scale。重排必须同步修改 activation 或相邻权重，保持模型函数一致。
+$$
+s=\max\!\left(1,\operatorname{RNE}((h-l)/15)\right),\qquad
+z=\operatorname{clip}\!\left(\operatorname{RNE}(-l/s),0,15\right),
+$$
 
-### Weight Clipping
+$$
+u_i=\operatorname{clip}\!\left(\operatorname{RNE}(q_i/s)+z,0,15\right),\qquad
+\widetilde q_i=(u_i-z)s,
+$$
 
-牺牲少量极值，换取普通 weight 更细的 quantization grid。clip ratio 应以 layer output error 或任务质量选择，而不是只最小化 weight 自身 MSE。
+这里 $$l,h$$ 是本组目标 codes 的最小、最大值，RNE 为 ties-to-even。这个例子中 $$s=16,z=7$$：
 
-### Smoothing / Rotation
+| 项目 | 四个元素 |
+| --- | --- |
+| 第一级目标 $$q^{(0)}$$ | $$[-119,-40,30,119]$$ |
+| 第二级 UINT4 $$u$$ | $$[0,5,9,14]$$ |
+| 恢复后的 INT8 $$\widetilde q$$ | $$[-112,-32,32,112]$$ |
+| 最终浮点权重 | $$[-1.12,-0.32,0.32,1.12]$$ |
 
-降低 activation outliers，使 A8 更稳定；但要同步观察迁移后 W4 group 的误差。对输入模块、输出模块和 attention projection，最佳策略可能不同。
+再给定激活 codes $$a=[2,-1,3,4]$$、尺度 $$s^X=0.25$$，整数点积为 $$352$$，输出是 $$352\times0.25\times0.01=0.88$$。原始浮点权重与这组重建激活的点积为 $$0.92$$。这既展示了尺度怎样回到输出，也展示了第二级量化确实引入了误差。
 
-### Mixed Precision Exclusion
+上述规则是用于手算和证明范围的教学合同，不是完整的 QoQ 参数搜索器。例如纯正窄组 $$[100,119]$$ 在这套规则下会严重截断成 $$[15,15]$$，不能据此承担一般的质量优化。真实校准还涉及 clipping、通道变换和参数搜索；也不能把这几行 RNE 编码器当成官方转换器在任意原始权重上的逐位复现。
 
-Embedding、LM head、某些 projection 或异常敏感层可以保留更高精度，但排除列表应来自消融实验。过多 fallback 会破坏 kernel coverage 和性能可预测性。
+## 3. 为什么第一级要给第二级预留范围
 
-## 正确性验证要覆盖五道边界
+即使第一级 codes 本身合法，第二级重建也可能越界。例如目标范围 $$[-113,120]$$，按上述规则得到 $$s=16,z=7$$。对 $$120$$ 先做 $$\operatorname{RNE}(120/16)=8$$，再加零点得到 $$u=15$$，重建就是 $$128$$，超过 signed INT8 的上界。
 
-W4A8 的系统链比单级 weight-only quantization 更长，建议按以下顺序验证。
+这里的顺序尤其重要：$$\operatorname{RNE}(7.5)+7=15$$，而 $$\operatorname{RNE}(7.5+7)=\operatorname{RNE}(14.5)=14$$。把零点移进 round，在 ties-to-even 下不总是同一规则。后者会重建成 $$112$$，不能用来替前者证明安全。
 
-### 1. Mathematical Transform
+QServe 把第一级对称范围收紧为 $$[-119,119]$$。对刚才声明的简化规则，可以给出一个把 clamp 也考虑进去的完整证明，而不依赖随机测试：
 
-关闭量化，确认 smoothing、rotation、channel reorder 与 folding 前后输出等价。先排除 graph rewrite 错误。
+1. 第一阶段整数 $$q\in[-119,119]$$，所以组跨度至多 $$238$$，按本例舍入规则有 $$1\le s\le16$$。
+2. 先不考虑 UINT4 clamp，令 $$r=\operatorname{RNE}(q/s)s$$。最近值舍入给出 $$\lvert r-q\rvert\le s/2\le8$$，因此 $$r\in[-127,127]$$。
+3. 实际重建 $$\widetilde q=(\operatorname{clip}(\operatorname{RNE}(q/s)+z,0,15)-z)s$$，等于把 $$r$$ 投影到 $$[-zs,(15-z)s]$$。因为 $$0\le z\le15$$，这个区间包含零；投影只会把越界的 $$r$$ 向零推，不会将其推到更远的同号极值。因此 $$\widetilde q$$ 仍在 $$[-127,127]$$。
 
-### 2. Quantization Reference
+注意，半步误差界对应第二步的**未 clamp 重建**；clamp 后不能无条件沿用同一个误差界。范围安全不等于误差必然很小，也不证明任意给定的 $$u,s,z$$ 组合都安全。例如 $$u=15,s=16,z=0$$ 重建为 $$240$$，就不满足最终 signed INT8 合同。保护范围必须与产生参数和 codes 的具体规则一起理解。[QServe v3，Protective Quantization Range](https://arxiv.org/html/2405.04532v3#S4.SS1)
 
-在高精度中模拟两级 quantize/dequantize，检查每层误差、饱和率、zero rate 和最坏 group。明确 rounding 与 clamp 规则。
+下面的标准库例子完成两级数值计算，并枚举所有整数端点及组内整数值。整数 RNE 使用 `divmod`，避免把有限枚举的判断建立在浮点除法的巧合上。它只检查本节的教学合同，不运行 LMQuant 或 CUDA kernel；小 group 也不是下文固定 dispatch 所支持的原生形状。
 
-### 3. Packed Decode
+<!-- example: w4a8-two-level-reference-and-protected-range -->
+```python
+from math import isclose, isfinite
 
-对 packed UINT4 做 CPU 或简单 GPU reference decode，逐元素比较期望的 INT8 中间 weight，覆盖 nibble 顺序、sign、padding 和尾部 group。
 
-### 4. Real GEMM
+def rne_ratio(numerator, denominator):
+    if (type(numerator) is not int or type(denominator) is not int
+            or denominator <= 0):
+        raise ValueError("integer numerator and positive integer denominator required")
+    quotient, remainder = divmod(numerator, denominator)
+    up = 2 * remainder > denominator or (
+        2 * remainder == denominator and quotient % 2 != 0)
+    return quotient + int(up)
 
-比较目标 W4A8 kernel 与 reference GEMM，覆盖不同 $M/N/K$、非对齐维度、bias、epilogue、TP shards 和多个 GPU architecture。
 
-### 5. Serving Output
+def clamp(value, lower, upper):
+    return min(upper, max(lower, value))
 
-比较 logits、greedy token、任务成功率、长上下文质量、TTFT、TPOT、goodput、显存与功耗。采样输出本身有随机性，不能只肉眼比较几段文本。
 
-每一层验证只跨一个新边界，才能区分算法误差、packing bug、kernel bug 和系统调度问题。
+def encode_group(codes):
+    if not codes or not all(type(v) is int and -119 <= v <= 119 for v in codes):
+        raise ValueError("nonempty protected integer code group required")
+    lower, upper = min(codes), max(codes)
+    scale = max(1, rne_ratio(upper - lower, 15))
+    zero = clamp(rne_ratio(-lower, scale), 0, 15)
+    unsigned = [clamp(rne_ratio(v, scale) + zero, 0, 15) for v in codes]
+    restored = [(u - zero) * scale for u in unsigned]
+    return unsigned, scale, zero, restored
 
-## Profiler 中应该看什么
 
-一次可信的性能报告至少回答：
+weights = [-1.19, -0.40, 0.30, 1.19]
+assert all(isfinite(v) for v in weights)
+scale0 = max(abs(v) for v in weights) / 119
+codes0 = [clamp(round(v / scale0), -119, 119) for v in weights]
+u, scale1, zero, restored = encode_group(codes0)
+assert codes0 == [-119, -40, 30, 119]
+assert (u, scale1, zero, restored) == ([0, 5, 9, 14], 16, 7, [-112, -32, 32, 112])
+activation_codes, activation_scale = [2, -1, 3, 4], 0.25
+integer_sum = sum(a * w for a, w in zip(activation_codes, restored))
+output = activation_scale * scale0 * integer_sum
+assert integer_sum == 352 and isclose(output, 0.88, abs_tol=1e-12)
+print("stage0 / u4 / restored:", codes0, u, restored, "output:", output)
+assert encode_group([0, 0]) == ([0, 0], 1, 0, [0, 0])
+assert encode_group([100, 119])[3] == [15, 15]  # safe does not mean accurate
 
-- W4A8 kernel 覆盖了多少 linear layers 和请求 buckets？
-- weight unpack / dequant 占 main loop 多少周期？
-- Tensor Core pipe 是否在等待 CUDA Core 或 memory dependency？
-- global/shared memory load 是否合并，bank conflict 是否异常？
-- register pressure 是否降低 occupancy？
-- activation quantization 是否与上游/当前 GEMM 融合？
-- epilogue 是否融合 scale、zero correction、bias 和 activation？
-- unsupported shape 是否 fallback 到 W4A16/BF16？
+# The two round orders are intentionally different at this tie.
+assert rne_ratio(120, 16) + 7 == 15
+assert rne_ratio(120 + 7 * 16, 16) == 14
+assert (15 - 7) * 16 == 128
 
-Microbenchmark 要比较相同 $M/N/K$、相同 output dtype 与相同 epilogue。Serving benchmark 则要固定 scheduler、KV dtype、并行策略、上下文分布和 SLO。否则观察到的差异可能来自 KV4、batching 或更大并发，而不是 W4A8 GEMM 本身。
-
-## Artifact Manifest 必须比 “int4” 更详细
-
-建议至少保存：
-
-```yaml
-format: w4a8
-recipe: <qoq / awq / gptq / custom>
-base_model_revision: <immutable revision>
-weight:
-  storage_dtype: <uint4 / int4 / fp4>
-  intermediate_dtype: <int8 / fp8 / other>
-  group_size: <n>
-  symmetric: <true / false>
-  scale_levels: <n>
-  protected_range: <optional>
-activation:
-  dtype: <int8 / fp8 format>
-  granularity: <per-tensor / per-token / block>
-  dynamic: <true / false>
-compute:
-  mma_dtype: <int8 / fp8 / other>
-  accumulator_dtype: <dtype>
-  output_dtype: <dtype>
-packing:
-  backend: <name and version>
-  gpu_arch: <target>
-  tile_layout: <layout id>
-parallelism:
-  tp_size: <n>
-calibration:
-  dataset_revision: <revision or checksum>
-  method: <recipe details>
+count, observed_min, observed_max = 0, 128, -129
+for lower in range(-119, 120):
+    for upper in range(lower, 120):
+        scale = max(1, rne_ratio(upper - lower, 15))
+        zero = clamp(rne_ratio(-lower, scale), 0, 15)
+        assert 1 <= scale <= 16
+        for target in range(lower, upper + 1):
+            unsigned = clamp(rne_ratio(target, scale) + zero, 0, 15)
+            value = (unsigned - zero) * scale
+            assert -128 <= value <= 127
+            count += 1
+            observed_min = min(observed_min, value)
+            observed_max = max(observed_max, value)
+assert count == 2303960
+print("enumerated cases / observed range:", count, observed_min, observed_max)
 ```
 
-同一模型即使量化参数一致，只要 tile layout 或 GPU target 不同，也可能需要不同 artifact revision。运行时加载时应验证 contract，而不是失败后静默 fallback。
+## 4. 一个 byte 中间值可以大于 127
 
-## 一条可执行的部署路径
+安全范围还要和寄存器里的运算顺序对应。固定 per-group kernel 并不是先对每个 nibble 做 signed 减法、再逐个乘尺度，而是先展开为 byte lane，计算 $$u\times s$$，再加已经缩放的零点偏移 $$-zs$$。
 
-1. **建立 BF16、W4A16、W8A8 三条基线**：明确目标 workload 的带宽与计算区间；
-2. **锁定 W4A8 backend**：确认 activation 格式、compute operand、GPU support 与 kernel shape；
-3. **构造 calibration set**：覆盖生产任务、长度、语言、长尾和并行配置；
-4. **选择量化 recipe**：联合搜索 smoothing/reorder、group size、clipping 与敏感层；
-5. **验证两级数值范围**：枚举 protected range、scale、zero point 的边界；
-6. **离线 pack 到目标 layout**：连同 scales、zeros、shard metadata 生成不可变 artifact；
-7. **逐元素验证 unpack**：确认每个 nibble 到 INT8/FP8 operand 的映射；
-8. **逐 shape 验证 real kernel**：覆盖 Prefill、Decode、padding 与 fallback；
-9. **分别衡量 W4、A8、KV4**：一次只改变一条低精度路径做消融；
-10. **运行真实 traffic benchmark**：比较 TTFT、TPOT、goodput、容量和成本；
-11. **发布 kernel coverage 指标**：把 fallback 与 quantization overhead 纳入监控；
-12. **灰度与回滚**：artifact、engine、runtime、driver 与 GPU architecture 一起版本化。
+在本节范围合同里 $$u\le15,s\le16$$，所以乘积至多是 $$240$$。**240 不是合法 signed INT8，但它是合法 unsigned byte。** 四个 UINT4 先分别放入一个 32-bit word 的四个 byte，同乘同一个小标量；只要每个乘积小于 256，就不会从一个 byte 乘出进位污染旁边的 lane。
 
-## 常见误区
+随后用逐 byte 加法加入 $$(-zs)\bmod256$$。CUDA 的 `__vadd4` 分别对四个 byte 相加、忽略各自溢出，既不是饱和加法，也不是允许进位穿到相邻 byte 的普通 32-bit 加法。只有最终数学重建值在 signed INT8 域内，所得 byte 的有符号解释才对应预期的 MMA 操作数。[固定 per-group kernel](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/kernels/csrc/qgemm/w4a8_per_group/gemm_cuda.cu)、[CUDA 12.8 SIMD 文档](https://docs.nvidia.com/cuda/archive/12.8.0/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__SIMD.html)
 
-### “Weight 是 4-bit，所以一定执行 INT4 乘法”
+例如仅检查 lane 算术，取 $$u=15,s=16,z=8$$：先得到 unsigned $$240$$，再加偏移 byte $$128$$，按模 256 得到 $$112$$，正好等于 $$(15-8)16$$。这组局部参数用于说明 byte 运算，并不声称它们来自上一节简化编码器的某个实际 group。
 
-4-bit 常是 storage precision。QServe 的整数 W4A8 路径把它恢复为 INT8 operand，再执行 INT8 Tensor Core GEMM。
+真实 artifact 也不是“4-bit zero point 另占半个 byte”那么简单。固定版 Python 类的 per-group 分支里：
 
-### “W4A8 一定比 W4A16 和 W8A8 都快”
+| 字段 | 数学含义 | 实际容器 |
+| --- | --- | --- |
+| `qweight` | 重排后打包的 UINT4 codes | int8 tensor，两个 nibble 一 byte |
+| `s1_scales` | 本文的第一级 $$s^{(0)}$$ | 每输出通道 FP16 |
+| `s2_scales` | 本文的整数 $$s^{(1)}$$ | 每组一 byte |
+| `s2_zeros` | $$(-zs^{(1)})\bmod256$$，不是 raw $$z$$ | 每组一 byte 的二补码位模式 |
 
-理论上兼顾带宽和算力，实际还受 unpack、scale、zero point、shape、fusion 与 fallback 限制。
+名称中的 `s1/s2` 与本文数学上从 0 开始的层级不同，读代码时不能错一层。[固定版 w4a8_linear.py](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/omniserve/modeling/layers/quantized_linear/w4a8_linear.py)
 
-### “Group 越小质量越好，所以应一直缩小”
+布局还为目标 kernel 的消费顺序服务。该版本以 $$32\times32$$ 的逻辑权重 tile 重排、打包，scale 与 scaled-zero 也相应重排。按源码的 $$W_{\mathrm{store}}[n,k]$$ 方向看，一个 tile 开头的部分 byte 对应：
 
-metadata、scale load、main-loop correction 与 layout 成本会增加，性能可能下降。
+| tile 内 byte 下标 | low nibble | high nibble |
+| --- | --- | --- |
+| 0 | $$W_{\mathrm{store}}[0,0]$$ | $$W_{\mathrm{store}}[16,0]$$ |
+| 4 | $$W_{\mathrm{store}}[8,0]$$ | $$W_{\mathrm{store}}[24,0]$$ |
+| 8 | $$W_{\mathrm{store}}[0,16]$$ | $$W_{\mathrm{store}}[16,16]$$ |
 
-### “W4A8KV4 是一个不可拆分的开关”
+所以第一个 byte 并不是逻辑矩阵里相邻输入通道的两个权重。数学公式正确而解包布局错误，仍会得到完全错误的矩阵。Python 构造器有 `group_size` 参数，也不代表 kernel 支持任意组大小：该固定 per-group dispatch 明确使用 $$G=128$$，packing 还有 tile 整除要求，不能把本文的小数值示例直接送进这个 kernel。
 
-Weight、activation、KV 属于不同 kernel 和容量路径，必须分别验证。
+固定两条 GEMM 路径使用的指令包含：
 
-### “所有 W4A8 都可以加载同一个 checkpoint”
+```text
+mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32
+```
 
-INT8 activation 与 FP8 activation、两级整数表示与 FP8 recipe、不同 packed layouts 都不兼容。
+这明确区分了 INT4 存储、signed INT8 乘法和 INT32 累加。epilogue 再把累加值与尺度转成浮点输出，而不是从名字 W4A8 推断存在 UINT4×INT8 的直接乘法。[固定 per-group kernel](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/kernels/csrc/qgemm/w4a8_per_group/gemm_cuda.cu)、[固定 per-channel kernel](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/kernels/csrc/qgemm/w4a8_per_chn/gemm_cuda.cu)
 
-## 小结
+## 5. 哪些修正可以移到 epilogue
 
-W4A8 的难点不在把两个 weights 塞进一个 byte，而在让 4-bit storage 持续、低成本地供应 8-bit Tensor Core main loop。
+该实现的 per-channel 分支不使用前面的整数第二级 group scale，而是直接表示整条输出通道的 UINT4 权重。如果一个输出通道共享同一个零点和权重尺度，代数展开是：
 
-可以抓住九点：
+$$
+\sum_k\widehat x_k(u_k-z)s_W
+=s_W\sum_k\widehat x_ku_k-zs_W\sum_k\widehat x_k.
+$$
 
-1. W4A8 只描述位宽，必须继续明确 INT8 还是 FP8 activation；
-2. Storage、compute operand、accumulator 和 output precision 是四层契约；
-3. W4A8 试图结合 W4A16 的权重带宽与 W8A8 的计算吞吐；
-4. main loop 中的 unpack/dequantization 会让理论 Roofline 失效；
-5. Progressive Quantization 先定义 INT8 中间 weight，再把它按 group 压成 UINT4；
-6. 两级 scale 与 protected range 要保证恢复结果合法且可高效计算；
-7. Compute-aware reorder 和寄存器级并行是 packed artifact 的一部分；
-8. W4、A8 与 KV4 解决不同瓶颈，不能互相代替；
-9. 只有 real kernel、coverage、质量和 SLO goodput 同时通过，W4A8 才算落地。
+前一项可以先做 INT8 dot product，后一项用该 token 的输入行和修正。这里的精确恒等式使用的是**量化重建输入的行和** $$\sum_k\widehat x_k$$。
 
-W4A8 将权重压缩与 8-bit 计算连接起来，仍然离不开配套 kernel。[FlashInfer]({% post_url 2026-05-13-flashinfer-deep-dive %}) 属于另一条运行时阅读路径，可以用来理解 Attention、GEMM、sampling 与量化实现怎样组织为可组合的 Serving primitives，而不是把某个量化算法直接等同于完整推理引擎。
+QServe 的 per-channel 路径还做了一步额外选择：用未量化输入的行和 $$\sum_k x_k$$ 替代它。二者通常接近，却不是同一个数，所以从论文式 (12) 到式 (13) 不能整段称为严格等价。[QServe v3，§5.2.2](https://arxiv.org/html/2405.04532v3#S5.SS2.SSS2)
+
+取 $$X=[1/10,1/5]$$、$$\widehat X=[1/8,1/4]$$、$$u=[2,3]$$、$$z=1,s_W=1/2$$。严格针对重建输入的结果为 $$5/16$$；保留第一项却改用原始 $$X$$ 行和修正后，结果为 $$7/20$$，差了 $$3/80$$。这个额外误差与 UINT4 的重建误差需要分开看。
+
+固定版 `generalLayerNorm_fuse_sum` 的相关路径在 INT8 转换前累计归一化输出的行和，再传入后续 per-channel GEMM；这支持“不是 INT8 codes 行和”的读法，也不意味着浮点累计与存储是无舍入的精确实数运算。[固定版 layernorm_kernels.cu](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/kernels/csrc/layernorm_kernels.cu)
+
+per-group 路径则不同：$$s_g,z_g$$ 都沿 $$K$$ 改变，不能只减一次全局零点修正，也不能把所有 group scale 一起提到 GEMM 外面。最小的例子是 $$x=[1,2]$$、$$u-z=[1,1]$$，两个组的尺度分别为 $$2,3$$，结果是 $$1\times2+2\times3=8$$；错误地提取第一组尺度会得到 $$2(1+2)=6$$。
+
+所以该固定 group kernel 在主循环中按组恢复 INT8，最后仅把 $$s^X_m s^{(0)}_n$$ 放到 epilogue。它的 `input_sum` 参数只是为了接口一致，并不用于这条 group 路径；不能拿 per-channel 行和修正替代实际 group 解码。[固定版 Linear 两个 forward 入口](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/omniserve/modeling/layers/quantized_linear/w4a8_linear.py)
+
+下面分别验证单个 $$32\times32$$ tile 的布局映射、byte lane 运算和上述修正差异。tile 示例只说明这份固定布局的局部索引，不是完整 checkpoint exporter，也不证明其他尺寸和内核可直接使用。
+
+<!-- example: w4a8-tile-bytes-lanes-and-correction -->
+```python
+from fractions import Fraction
+
+
+def tile_offset(n, k):
+    if type(n) is not int or type(k) is not int or not (0 <= n < 32 and 0 <= k < 32):
+        raise ValueError("integer indices within this 32 by 32 tile required")
+    n1, n2, n3 = n // 16, (n // 8) % 2, n % 8
+    k1, k2, k3 = k // 16, (k // 4) % 4, k % 4
+    offset = ((((n3 * 4 + k2) * 2 + k1) * 2 + n2) * 4 + k3)
+    return offset, 4 * n1
+
+
+def pack_tile(values):
+    if len(values) != 32 or not all(len(row) == 32 for row in values):
+        raise ValueError("a 32 by 32 tile is required")
+    packet = bytearray(512)
+    for n in range(32):
+        for k in range(32):
+            code = values[n][k]
+            if type(code) is not int or not 0 <= code <= 15:
+                raise ValueError("integer UINT4 codes required")
+            offset, shift = tile_offset(n, k)
+            packet[offset] |= code << shift
+    return bytes(packet)
+
+
+def unpack_tile(packet):
+    if not isinstance(packet, (bytes, bytearray)) or len(packet) != 512:
+        raise ValueError("exactly 512 tile bytes required")
+    restored = [[0] * 32 for _ in range(32)]
+    for offset, byte in enumerate(packet):
+        rest, k3 = divmod(offset, 4)
+        rest, n2 = divmod(rest, 2)
+        rest, k1 = divmod(rest, 2)
+        n3, k2 = divmod(rest, 4)
+        n, k = 8 * n2 + n3, 16 * k1 + 4 * k2 + k3
+        restored[n][k], restored[n + 16][k] = byte & 15, byte >> 4
+    return restored
+
+
+tile = [[(5 * (n // 16) + 7 * (n % 16) + 7 * (k // 16) + 3 * (k % 16)) % 16
+         for k in range(32)] for n in range(32)]
+packet = pack_tile(tile)
+assert unpack_tile(packet) == tile
+for offset, low_n, high_n, k in [(0, 0, 16, 0), (4, 8, 24, 0), (8, 0, 16, 16)]:
+    assert packet[offset] == tile[low_n][k] + (tile[high_n][k] << 4)
+print("tile bytes 0 / 4 / 8:", [packet[i] for i in [0, 4, 8]])
+
+# Four byte lanes share a scale, as in the local register operation.
+unsigned, scale, zero = [0, 7, 8, 15], 16, 8
+word = sum(u << (8 * i) for i, u in enumerate(unsigned))
+product_word = word * scale
+assert all(((product_word >> (8 * i)) & 255) == u * scale
+           for i, u in enumerate(unsigned))  # no cross-byte carry
+zero_byte = (-zero * scale) & 255
+lane_bytes = [(((product_word >> (8 * i)) & 255) + zero_byte) & 255
+              for i in range(4)]
+signed = [b if b < 128 else b - 256 for b in lane_bytes]
+assert signed == [(u - zero) * scale for u in unsigned] == [-128, -16, 0, 112]
+normal_add = (product_word + sum(zero_byte << (8 * i) for i in range(4))) & 0xFFFFFFFF
+lane_add = sum(b << (8 * i) for i, b in enumerate(lane_bytes))
+assert normal_add != lane_add  # ordinary 32-bit addition is not __vadd4
+print("unsigned product / final s8:", [u * scale for u in unsigned], signed)
+
+x = [Fraction(1, 10), Fraction(1, 5)]
+xhat = [Fraction(1, 8), Fraction(1, 4)]
+u, z, sw = [2, 3], 1, Fraction(1, 2)
+main = sw * sum(a * b for a, b in zip(xhat, u))
+exact = main - z * sw * sum(xhat)
+extra_approximation = main - z * sw * sum(x)
+assert exact == Fraction(5, 16)
+assert extra_approximation == Fraction(7, 20)
+assert extra_approximation - exact == Fraction(3, 80)
+assert 1 * 2 + 2 * 3 == 8 and 2 * (1 + 2) == 6
+print("channel correction, exact / original-row-sum:", exact, extra_approximation)
+```
+
+## 6. SmoothAttention 为什么要尊重 RoPE 的二维配对
+
+W4A8 是 Linear 的路径，KV4 则压缩 Attention 的历史状态。启用其中一个，不代表另一个自动获得同样的容量或计算收益。QServe 为低比特 Key 引入 SmoothAttention，把 Key 的部分幅度迁移给未量化的 Attention Query：
+
+$$
+Q'=Q\Lambda,\qquad K'=K\Lambda^{-1},\qquad
+\Lambda=\operatorname{diag}(\lambda),\quad \lambda_i>0.
+$$
+
+因为 $$\Lambda$$ 是正的可逆对角矩阵：
+
+$$
+Q'(K')^T=QK^T.
+$$
+
+这里 Query 不量化，指 Attention 点积所用的 Query 表示，不是说生成 Query 的投影层输入也没有 A8 量化。论文的 block 边界保持 FP16，相关 Linear 输入仍有自己的 INT8 路径；KV4 的压缩与读取转换需要独立处理。[QServe v3，§4.2 与 §5.1](https://arxiv.org/html/2405.04532v3#S4.SS2)
+
+若在 RoPE **之后**执行上述互逆缩放，任意正的对角 $$\Lambda$$ 都能在点积中抵消。但若想把缩放融合进 RoPE 之前的 Q/K 投影权重，就要求它与位置旋转交换。RoPE 的每个二维旋转对必须共享同一个 $$\lambda$$。
+
+论文所用的 split-half 布局配对 $$i$$ 与 $$i+D/2$$，所以约束是 $$\lambda_i=\lambda_{i+D/2}$$；使用相邻通道配对的实现则应按它实际的配对关系处理，不能机械复制 split-half 下标。论文据配对通道的 Key 幅度共同选择尺度，常用迁移指数为 $$0.5$$。若统计全零，教学参考还需显式使用正下界，不能令 $$\lambda=0$$ 后再求逆。[QServe v3，SmoothAttention](https://arxiv.org/html/2405.04532v3#S4.SS2)
+
+这一点与 [QuaRot/SpinQuant]({% post_url 2026-10-15-quarot-spinquant-rotation %}) 很适合对照：一般 Hadamard 不能穿过不同位置的 RoPE，所以在那里把 Q/K 配对旋转放到位置编码后；SmoothAttention 使用对角缩放，并约束每个二维对为同一标量，从而可以满足交换条件。这不是“任何变换都能融合”，而是为融合选择了特定结构。
+
+仍取二维 Query $$[1,0]$$、Key $$[0,1]$$，两位置分别不旋转与旋转 90 度。原点积为 $$-1$$。在位置变换之后用 $$\operatorname{diag}(2,3)$$ 互逆缩放，点积不变；若把它提前，结果却是 $$-2/3$$。提前使用配对等值的 $$\operatorname{diag}(2,2)$$ 才仍为 $$-1$$。这个有限浮点小例拒绝非有限中间值、非零分量缩放成零等超出参考范围的情形，不是任意动态范围的 exporter。
+
+<!-- example: w4a8-smoothattention-rope-pairing -->
+```python
+from math import isclose, isfinite, sqrt
+
+
+def dot(a, b):
+    if not a or len(a) != len(b) or not all(isfinite(v) for v in [*a, *b]):
+        raise ValueError("finite vectors with equal nonzero dimensions required")
+    result = sum(x * y for x, y in zip(a, b))
+    if not isfinite(result):
+        raise ValueError("dot product is outside this float reference's range")
+    return result
+
+
+def rope90(row):
+    if len(row) != 2 or not all(isfinite(v) for v in row):
+        raise ValueError("a finite two-element RoPE pair is required")
+    return [-row[1], row[0]]
+
+
+def scale_pair(query, key, scales):
+    if not query or len(query) != len(key) or len(query) != len(scales):
+        raise ValueError("head dimensions differ")
+    if (not all(isfinite(v) for v in [*query, *key])
+            or not all(isfinite(s) and s > 0 for s in scales)):
+        raise ValueError("finite inputs and positive finite scales required")
+    q_new = [q * s for q, s in zip(query, scales)]
+    k_new = [k / s for k, s in zip(key, scales)]
+    for original, transformed in [(query, q_new), (key, k_new)]:
+        if any(not isfinite(v) or (x != 0 and v == 0)
+               for x, v in zip(original, transformed)):
+            raise ValueError("scaling is outside this float reference's range")
+    return q_new, k_new
+
+
+q, k = [1.0, 0.0], [0.0, 1.0]
+original = dot(q, rope90(k))  # query's position transform is identity
+post_q, post_k = scale_pair(q, rope90(k), [2.0, 3.0])
+pre_q, pre_k = scale_pair(q, k, [2.0, 3.0])
+paired_q, paired_k = scale_pair(q, k, [2.0, 2.0])
+assert original == -1.0 and dot(post_q, post_k) == original
+assert isclose(dot(pre_q, rope90(pre_k)), -2 / 3, abs_tol=1e-12)
+assert dot(paired_q, rope90(paired_k)) == original
+
+# A declared teaching floor for an all-zero Key pair, not an exporter promise.
+key_pair_maxima, epsilon = [0.0, 0.0], 1e-6
+common_scale = sqrt(max(epsilon, *key_pair_maxima))
+assert common_scale > 0
+_, _ = scale_pair(q, k, [common_scale, common_scale])
+print("original / post / invalid pre / paired pre:", original,
+      dot(post_q, post_k), dot(pre_q, rope90(pre_k)), dot(paired_q, rope90(paired_k)))
+```
+
+这些点积恒等式不等于 KV4 无损：Key 与 Value 之后的实际量化仍会引入误差。它们只说明，如果缩放位置和配对条件正确，就没有在量化之前额外改错 Attention 函数。
+
+## 7. 真实转换器接收的不是任意原始 FP 权重
+
+有了前面的数值参考，很容易误以为官方 `from_linear` 会接收任意 FP16/BF16 权重，自动搜索两级尺度并执行本文全部 RNE、clamp。这个理解不符合固定代码的输入流程。
+
+该版本 `checkpoint_converter.py` 读取的是 LMQuant 已经导出的 fake-quant `model.pt` 与 `scale.pt`，从中获取两级尺度和零点，再传入 `W4A8OF16LinearDynamicInputScale.from_linear`。`from_linear` 的职责包括从已有浮点重建参数恢复 codes、检查范围、转换类型与重排打包；它的第二级恢复并没有再次完整执行本文教学编码器的 RNE+clamp 搜索。[固定版 checkpoint_converter.py](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/scripts/ckpt_converter/checkpoint_converter.py)、[固定版 from_linear](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/omniserve/modeling/layers/quantized_linear/w4a8_linear.py)
+
+特别是第一步除回浮点尺度后，输入已经包含第二级量化误差，恢复的是最终 $$\widetilde q$$，不一定是原先被保护的 $$q^{(0)}$$。代码实际检查的是 $$[-128,127]$$，不是重新验证 $$q^{(0)}\in[-119,119]$$；最终值例如 121 仍可能合法。原始保护区间与 raw zero 的有效域属于上游参数合同，也不能由这一步检查或 tensor dtype 自动认证。
+
+因此要区分“量化参数怎样搜索”和“按已知参数生成 kernel artifact”。即使旁边有一个 generic pseudo quantizer，也不能把它直接当成完整 QoQ 量化器。本文的整数证明、单 tile pack 与真实转换入口各自回答不同问题，不承诺彼此是任意输入下的逐位替代实现。
+
+## 8. FP8 activation 的 W4A8 不是这一套整数表示
+
+`W4A8` 只告诉位宽，没有告诉整数还是浮点。一个具体例子是 ModelOpt 0.35.0 固定配置 `W4A8_AWQ_BETA_CFG`：权重配置先做 INT4 block128，再接 FP8 量化，输入 activation 使用 FP8 `(4,3)`，即 E4M3 类表示。[ModelOpt 固定版 config.py](https://github.com/NVIDIA/Model-Optimizer/blob/c359cb774db4daab623cddde6c7e0399a49cf7d2/modelopt/torch/quantization/config.py)
+
+它与本文的 UINT4→整数 group scale→signed INT8 operand，不是同一个数值流水线。TensorRT-LLM 1.1.0 文档也列出了 W4A8 AWQ 等 recipe，但模型与硬件支持要按该版本的表格阅读，不能把名字相同理解为 checkpoint、activation dtype 或 kernel 可以互换。这些是固定版本的例子，不是对当前推荐配置或所有后端支持的宣告。[TensorRT-LLM 1.1.0 Quantization](https://nvidia.github.io/TensorRT-LLM/1.1.0/features/quantization.html)
+
+## 9. 把格式合同与执行收益分开核对
+
+对前面的固定 per-group artifact，忽略 bias 与 padding，权重主体和 metadata 的平均成本是：
+
+$$
+\frac12+\frac2G+\frac2K\quad\text{bytes/weight}.
+$$
+
+其中每组有一 byte 整数尺度、一 byte scaled-zero，每个输出通道还有一份 FP16 的第一级尺度。取 $$G=128,K=4096$$，结果是 $$0.51611328125$$ bytes/weight，而不是只看权重 nibble 的 $$0.5$$。这笔预算也不包含 KV Cache、临时 workspace 和其他浮点模块。
+
+数值与布局检查可以直接围绕本文链条展开：第一级目标与第二级重建是否符合声明规则，最终 signed byte 是否对应数学值，真实 tile 与 scale/zero 是否同步重排，实际 kernel 是否消费同一套元数据。真实 GEMM 还要使用它支持的 $$M/N/K$$ 和 group size，与对应的浮点重建参考比较；单 tile 往返并不能证明整个 kernel 正确。
+
+性能则要再看目标 GPU、shape 与动态激活量化的代价。小 $$M$$ 节省权重流量的收益，可能被大 $$M$$ 下的转换吞吐、寄存器占用和调度改变；KV4 的容量变化也不能全部归到 Linear W4A8 GEMM。本文的标准库执行没有运行官方 converter、Torch、CUDA kernel 或模型推理，不将论文的任务质量与吞吐结果当作本机结果。
+
+W4A8 的关键不只是把两个权重装进一个 byte，而是规定这个 byte 怎样变成合法、可高效供应的 8-bit 操作数。两级整数范围、逐 byte 算术、group 与 channel 修正位置、SmoothAttention 的融合条件，以及真实 converter 的输入假设，必须共同成立。只有把这些细节连起来，4-bit 存储与 8-bit 计算才是一条明确的执行路线，而不只是两个位宽标签。
 
 ## 参考资料
 
-- [QServe: W4A8KV4 Quantization and System Co-design for Efficient LLM Serving](https://arxiv.org/abs/2405.04532)
-- [MIT HAN Lab: QServe Official Repository](https://github.com/mit-han-lab/qserve)
-- [NVIDIA TensorRT-LLM: Quantization](https://nvidia.github.io/TensorRT-LLM/1.1.0/features/quantization.html)
-- [NVIDIA TensorRT Model Optimizer: LLM PTQ Examples](https://github.com/NVIDIA/TensorRT-Model-Optimizer/tree/main/examples/llm_ptq)
-- [SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models](https://arxiv.org/abs/2211.10438)
-- [AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration](https://arxiv.org/abs/2306.00978)
+- [QServe: W4A8KV4 Quantization and System Co-design for Efficient LLM Serving，arXiv v3](https://arxiv.org/html/2405.04532v3)：本文方法与系统说明；该修订为 2025-05-01，研究首发于 2024 年。
+- [固定版 w4a8_linear.py](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/omniserve/modeling/layers/quantized_linear/w4a8_linear.py)、[checkpoint_converter.py](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/scripts/ckpt_converter/checkpoint_converter.py)：字段表示、转换输入与 tile packing。原 QServe 官方仓库名称已重定向为 OmniServe，这里固定同一 commit 而非跟随默认分支。
+- [固定版 per-group GEMM](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/kernels/csrc/qgemm/w4a8_per_group/gemm_cuda.cu)、[per-channel GEMM](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/kernels/csrc/qgemm/w4a8_per_chn/gemm_cuda.cu)、[行和与量化路径](https://github.com/mit-han-lab/omniserve/blob/02b2925aa6fa3b92b06316a1524b7f38922cd9c8/kernels/csrc/layernorm_kernels.cu)：指令、byte lane、epilogue 与 dispatch。
+- [CUDA Math API 12.8 SIMD Intrinsics](https://docs.nvidia.com/cuda/archive/12.8.0/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__SIMD.html)：`__vadd4` 的逐 byte 加法语义。
+- [ModelOpt 0.35.0 固定配置](https://github.com/NVIDIA/Model-Optimizer/blob/c359cb774db4daab623cddde6c7e0399a49cf7d2/modelopt/torch/quantization/config.py)、[TensorRT-LLM 1.1.0 Quantization](https://nvidia.github.io/TensorRT-LLM/1.1.0/features/quantization.html)：用于区分同名 FP8 W4A8 路线，不作为跨版本兼容性承诺。

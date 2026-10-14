@@ -68,3 +68,7 @@ node scripts/audit-posts.mjs
 三个真实代码块与 7 组专项复跑通过；全部 29 个 JavaScript 审核套件、既有 Python、96 篇元数据和历史 coverage 通过，`git diff --check` 无空白错误。实际生产构建生成 111 个 HTML 页面、136 个文件，89 篇文章中的 1196 个原生行内公式和 998 个独立公式通过结构检查。
 
 浏览器实际打开本地文章：112 个 MathJax 容器、0 个渲染错误、无单双美元残留，1265 像素视口无整页横向溢出，残差基和 RMS 等变推导截图正常。实际正文包含两项首发日与修订边界。Root 另将专项注释的 FP4 更正为本篇 INT4；执行逻辑及正文未变。发布结果另记，未运行官方模型/优化器或 GPU。
+
+## 七、发布核验
+
+提交 `7a01c3609947a009d52325361374d8403c7adfa0` 已推送至 origin/master；对应 [工作流 38625815966](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38625815966) build/deploy 均 completed/success。浏览器实际读回 [线上文章](https://charlestar.github.io/2026/10/15/quarot-spinquant-rotation/)，最终 epsilon guard、冻结基础参数而继续对 R 反传的说明及两项首发日均存在。112 个 MathJax 容器、0 个错误，无美元残留或整页横向溢出。部署证据不扩展为真实模型或 GPU 验证。
