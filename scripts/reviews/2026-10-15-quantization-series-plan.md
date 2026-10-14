@@ -13,9 +13,9 @@
 | 顺序 | 核心技术时间 | 文章主题 | 具体内容与关键例子 | 操作 | 本次状态 |
 | --- | --- | --- | --- | --- | --- |
 | 10 | 2017-12-15 | 从实数到整数的量化数值契约 | 仿射与对称量化、scale/zero point、ties-to-even、clipping、粒度、GEMM 修正、fake quant/STE；手算与标准库代码 | 新增 | 已上线，见下方发布证据 |
-| 20 | 2022-08-15 | LLM.int8 异常值分解 | vector-wise 量化、按输入特征维拆分 INT8/FP16、阈值、近似误差与实际系统成本；小矩阵分解反例 | 新增 | 正文、独立审核、算例、构建与本地页面通过，待线上确认 |
-| 30 | 2022-09-12 | FP8 格式与缩放 | E4M3/E5M2、正常/非正规数、current/delayed scaling、scale 方向与 K 维约束；编码边界与等比例缩放反例 | 保留旧 URL，逐篇校订 | 已迁系列，待本轮全文复审 |
-| 40 | 2022-10-31 | GPTQ 层重建与误差补偿 | 校准输入、二次目标、近似二阶信息、逐列补偿、分块/Cholesky、damping；独立二次目标算例 | 新增 | 待调研 |
+| 20 | 2022-08-15 | LLM.int8 异常值分解 | vector-wise 量化、按输入特征维拆分 INT8/FP16、阈值、近似误差与实际系统成本；小矩阵分解反例 | 新增 | 已上线，见下方发布证据 |
+| 30 | 2022-09-12 | FP8 格式与缩放 | E4M3/E5M2、正常/非正规数、current/delayed scaling、scale 方向与 K 维约束；编码边界与等比例缩放反例 | 保留旧 URL，逐篇校订 | 全文复审与本地验收完成，待发布验证 |
+| 40 | 2022-10-31 | GPTQ 层重建与误差补偿 | 校准输入、二次目标、近似二阶信息、逐列补偿、分块/Cholesky、damping；独立二次目标算例 | 新增 | 调研完成，逐篇写作待开始 |
 | 50 | 2022-11-18 | SmoothQuant 等价通道缩放 | alpha 的真实作用、输入维与输出维、folding 分叉、W8A8 的运行时边界；缩放等价性与量化后误差 | 保留旧 URL，逐篇校订 | 已迁系列，待本轮全文复审 |
 | 60 | 2023-05-23 | QLoRA 与 NF4 | 非均匀码本、分块 absmax、double quant、冻结基座与 LoRA 梯度、存储/计算精度、合并再量化；小码本与梯度数据流 | 新增 | 待调研 |
 | 70 | 2023-06-01 | AWQ 保护显著权重 | activation salience、等价缩放的 group 耦合、clipping、W4A16 packing；权重 MSE 与输出误差不同的反例 | 保留旧 URL，逐篇校订 | 已迁系列，待本轮全文复审 |
@@ -68,3 +68,13 @@ NVFP4 KV Cache、QuantSpec、FP4 Attention 等既有文章继续保留在原主�
 正文 `_posts/2026-10-15-quantization-numerical-foundations.md`；三角色研究、写作与独立审核完成。正文三块代码直接执行，9 组专项检查通过，包含 1,395 个精确有理数格点用例；root 补充修复 GFM 误解析行内绝对值的排版问题和构建回归检查。
 
 文章提交 `d9a40f8071985322a4d7dc65ac723626576c7cdd` 已推送，匹配 [工作流 38613320553](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38613320553) 的 build/deploy 均成功。浏览器已读回 [线上文章](https://charlestar.github.io/2026/10/15/quantization-numerical-foundations/)：97 个 MathJax 容器、0 个渲染错误、无双美元残留，实际带有最终编码范围 guard。此证据不扩展为真实模型/GPU/QAT 实验。
+
+### 第二篇 LLM.int8
+
+正文 `_posts/2026-10-15-llm-int8-outlier-decomposition.md`；两块正文代码直接执行，7 组独立专项检查通过，包括行/列 scale、整列并集、阈值/空集合/零向量、数值中间溢出与下溢、固定版本实现差异和误差抵消反例。全部 22 个 JavaScript 套件、既有 Python 套件、生产构建及本地页面检查通过。
+
+提交 `15ea4dea0d69e7b5f4b06a9afb2426590b5bcd82` 已推送，对应 [工作流 38614546451](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38614546451) 的 build/deploy 均成功。浏览器实际读回 [线上文章](https://charlestar.github.io/2026/10/15/llm-int8-outlier-decomposition/)：46 个 MathJax 容器、0 个错误、无双美元残留；最终 scale_product guard 和非单调改进边界都在正文中。这里没有执行真实 bitsandbytes、模型或 GPU benchmark。
+
+### 第三篇 FP8 旧文全文校订
+
+保留原日期与 URL，完成独立原论文、固定 TE v2.3 源码与 API 核对，补充 FN/FNUZ、特殊值、current/delayed 与 block/MX 区别。8 组专项含 512 个格式/byte 组合的独立有理数码本和全部相邻格点边界；全部 23 个 JavaScript 套件、Python、元数据、生产构建与页面/数学检查通过。本地浏览器读到 63 个 MathJax 容器、0 个错误、无单双美元残留，格式表截图排版正常。发布证据待推送后单独登记；没有真实 TE、CUDA 或模型实验。

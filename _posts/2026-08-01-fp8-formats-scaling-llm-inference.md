@@ -26,27 +26,33 @@ high-precision tensor
   → preserve or update scale metadata
 ```
 
-任何一步退回 BF16、在热路径重复转换，或者选择了过粗的 scale，都可能让“FP8 模型”只有容量收益，没有计算收益，甚至产生质量回退。
+若原定的 FP8 GEMM 实际回退为 BF16 GEMM，或者在热路径重复转换，可能只剩容量收益、没有预期计算收益；过粗的 scale 还可能导致质量回退。这与主动让累加、输出或敏感算子保留较高精度不同，后者本来就是混合精度计算的一部分。
+
+格式部分采用原始 FP8 论文中的 E4M3、E5M2 定义；其中 E4M3 对应常见类型名 `E4M3FN`。软件 recipe 则以 Transformer Engine **v2.3** 的固定实现为例，后文的默认值与支持条件都限定在这个版本，不代表所有低精度库的统一约定。
 
 ## 8 个 Bit 怎样分配
 
-常见 FP8 有两个编码：E4M3 和 E5M2。名称中的 `E` 是 exponent bits，`M` 是 mantissa/fraction bits；另有一个 sign bit。
+常见 FP8 有两个编码：E4M3 和 E5M2。名称中的 `E` 是 exponent bits，`M` 是 fraction bits；另有一个 sign bit。正常数有效数的隐含前导 1 不包含在这三位或两位 fraction 中。
 
 ```text
 E4M3: sign 1 + exponent 4 + mantissa 3 = 8 bits
 E5M2: sign 1 + exponent 5 + mantissa 2 = 8 bits
 ```
 
-NVIDIA Transformer Engine 当前文档给出的范围是：
+两种格式的关键数值如下：
 
-| 格式 | 最大有限绝对值 | 特点 |
-| --- | ---: | --- |
-| E4M3 | 448 | 尾数更多，相对精度更好，范围较小 |
-| E5M2 | 57,344 | 指数更多，动态范围更大，相对精度更低 |
+| 格式 | Exponent bias | 最大有限绝对值 | 最小正常数 | 最小正 subnormal | 特殊值 |
+| --- | ---: | ---: | --- | --- | --- |
+| E4M3FN | 7 | 448 | $$2^{-6}$$ | $$2^{-9}$$ | 正负零、NaN，没有 Inf |
+| E5M2 | 15 | 57,344 | $$2^{-14}$$ | $$2^{-16}$$ | 正负零、NaN、正负 Inf |
+
+表中的 subnormal 是非正规数：它们不使用正常数的隐含前导 1，因而能继续表示更接近零的值，但相对精度逐步下降。以 exponent 字段 $$e$$、fraction 整数 $$f$$、fraction 位数 $$m$$ 和 exponent bias $$b$$ 表示，正常有限数可写成 $$(-1)^S2^{e-b}(1+f/2^m)$$；exponent 为零时改用 $$(-1)^S2^{1-b}(f/2^m)$$。因此，E4M3FN 最小正 subnormal 恰为 $$2^{-6}/8=2^{-9}$$。[FP8 原论文 §3、表 1](https://arxiv.org/html/2209.05433v2#S3)
+
+格式后缀不能省略。`E4M3FNUZ` 的 bias 为 8，没有负零，与这里的 `E4M3FN` 并非相同的字节解释；E5M2 也有 FNUZ 变体。即使指数位、fraction 位的数量相同，也不能只改 dtype 标签就完成转换。[ONNX float8 定义](https://onnx.ai/onnx/technical/float8.html#e4m3fnuz-and-e5m2fnuz)
 
 BF16 有 8-bit exponent、7-bit mantissa；FP16 有 5-bit exponent、10-bit mantissa。FP8 同时减少范围或有效精度，不能在没有 scale 的情况下覆盖任意 Transformer tensor。
 
-原始 FP8 论文提出 E4M3/E5M2 两种格式，是因为深度学习不同张量的需求不同：forward 权重/activation 更在意精度，gradient 更需要动态范围。Transformer Engine 的 hybrid training recipe 因此默认 forward 使用 E4M3，backward gradient 使用 E5M2。
+E4M3 的 fraction 更多，E5M2 的指数范围更宽，对应不同张量的需求。Transformer Engine v2.3 的 `DelayedScaling` 与 `Float8CurrentScaling` 默认使用 hybrid：forward 的相关 FP8 张量采用 E4M3，backward 采用 E5M2。但不能把这个默认值扩大成所有 recipe：同版本的 `MXFP8BlockScaling` 默认使用 E4M3。[固定版本 recipe 定义](https://github.com/NVIDIA/TransformerEngine/blob/5de3e1481cc1f5d6f7da6ac8938870b791b796db/transformer_engine/common/recipe/__init__.py)
 
 纯推理没有 backward，E5M2 并不会因为“更安全”就自动更好；通常要根据 tensor 分布和硬件 recipe 选择。
 
@@ -58,7 +64,7 @@ BF16 有 8-bit exponent、7-bit mantissa；FP16 有 5-bit exponent、10-bit mant
 ..., -2s, -s, 0, s, 2s, ...
 ```
 
-FP8 有指数，绝对值越大，相邻可表示值的间距也越大。它能在一个编码中覆盖多个数量级，对 LLM 中分布跨度较大的权重/activation 更友好，但小 mantissa 仍会带来明显 rounding error。
+FP8 有指数，绝对值越大，相邻可表示值的间距也越大。它能在一个编码中覆盖多个数量级，不必给整个范围使用相同绝对间距，但较少的 fraction 位仍会带来明显 rounding error。
 
 两者都通常需要外部 scale：
 
@@ -67,15 +73,15 @@ INT8 code + scale
 FP8 code + scale
 ```
 
-“FP8 本身有指数”不等于可以省略 scale。外部 scale 负责把当前 tensor 的有效范围移动到 FP8 最合适的编码区间，内部 exponent 再表达 tensor 内部的数量级差异。
+“FP8 本身有指数”不等于可以省略 scale。外部 scale 负责把当前 tensor 的有效范围移动到选定的 FP8 区间，内部 exponent 再表达 tensor 内部的数量级差异。关于整数等距格点与舍入，可以对照 [量化数值基础]({% post_url 2026-10-15-quantization-numerical-foundations %})。
 
 ## Scale 怎样把 Tensor 塞进 E4M3
 
-设原 tensor 为 $X$，选择 scale $s>0$。一种一致写法是：
+设原 tensor 为 $$X$$，目标格式的最大有限绝对值为 $$F_{max}$$，选择 scale $$s>0$$。一种一致写法是：
 
 $$
 X_{fp8}=\operatorname{cast}_{fp8}
-\left(\operatorname{clip}\left(\frac{X}{s}\right)\right)
+\left(\operatorname{clip}\left(\frac{X}{s},-F_{max},F_{max}\right)\right)
 $$
 
 反量化近似为：
@@ -84,10 +90,10 @@ $$
 \hat X=sX_{fp8}
 $$
 
-若使用 E4M3，最大表示值记为 $F_{max}=448$，基于当前绝对最大值：
+若使用 E4M3，最大表示值记为 $$F_{max}=448$$，基于当前绝对最大值：
 
 $$
-a_{max}=\max |X|
+a_{max}=\max\lvert X\rvert
 $$
 
 最直接的 scale 为：
@@ -96,7 +102,9 @@ $$
 s=\frac{a_{max}}{F_{max}}
 $$
 
-这个式子要求输入有限且 $a_{max}>0$，让最大值刚好落在格式边界。全零 tensor/block 应显式返回零 codes 并使用合法正 scale（例如 1），不能令 $s=0$ 后再计算 $X/s$；NaN/Inf 则需按 recipe 报错或处理。实际 recipe 还可能加入 margin、power-of-two rounding、历史统计、clipping 和 distributed amax reduction。本文的 $s$ 是反量化乘子，有些库把其倒数称为 `scale`，接入时必须核对方向。
+这个式子要求输入有限且 $$a_{max}>0$$，让最大值刚好落在格式边界。全零 tensor/block 应显式返回零 codes 并使用合法正 scale（例如 1），不能令 $$s=0$$ 后再计算 $$X/s$$；NaN/Inf 则需按 recipe 报错或处理。实际 recipe 还可能加入 margin、power-of-two rounding、历史统计、clipping 和 distributed amax reduction。本文的 $$s$$ 是反量化乘子，有些库把其倒数称为 `scale`，接入时必须核对方向。
+
+本文的算例选择最近偶数舍入，并将有限越界值饱和到 $$\pm F_{max}$$。这是明确的转换策略，不是“E4M3 没有 Inf，所以所有 cast 一定自动饱和”。例如 CUDA Math API 12.8 的 FP8 转换就有显式 saturation 参数，调用方必须选择对应行为。[CUDA 12.8 转换接口](https://docs.nvidia.com/cuda/archive/12.8.0/cuda-math-api/cuda_math_api/group__CUDA__MATH__FP8__MISC.html)
 
 scale 太小会让大值溢出/饱和；太大则可能让小值进入 subnormal（非正规数）范围，丢失有效精度，甚至舍入为零。只要数值仍处于正常数范围，就不能仅凭缩放后的数值变小，断言它的相对精度变差。
 
@@ -110,11 +118,11 @@ X_fp8[n, h] + one scale
 
 优点是元数据少、GEMM/通信接口简单。问题是一个 outlier 可以决定全局 scale，使较小的值触及格式的下溢边界。这里需要区分 FP8 的浮点网格与 INT8 的等距格点。
 
-对正常数，E4M3 在区间 $[2^e,2^{e+1})$ 内的相邻数间距为 $2^{e-3}$，相对分辨率主要由三位 fraction 决定。用 $2$ 的整数次幂缩放，且缩放前后都不触及上溢、下溢边界时，只会移动指数，不会增加有效位数。例如按最近值舍入，$1.1$ 直接转 E4M3 得到 $1.125$；先乘 $256$，把 $281.6$ 舍入成 $288$，再除以 $256$，仍然得到 $1.125$。把正常数从“约 1”搬到“约几百”的编码区间，并不会自动获得更多有效精度；非 $2$ 的幂缩放可能改变舍入落点，但也没有这种精度保证。
+对正常数，E4M3 在同一数量级区间 $$[2^j,2^{j+1})$$ 内的相邻有限格点间距为 $$2^{j-3}$$，这里 $$j$$ 是去掉 bias 后的指数，相对分辨率主要由三位 fraction 决定。用 $$2$$ 的整数次幂缩放，且缩放前后都不触及上溢、下溢边界时，只会移动指数，不会增加有效位数。例如按最近值舍入，$$1.1$$ 直接转 E4M3 得到 $$1.125$$；先乘 $$256$$，把 $$281.6$$ 舍入成 $$288$$，再除以 $$256$$，仍然得到 $$1.125$$。把正常数从“约 1”搬到“约几百”的编码区间，并不会自动获得更多有效精度；非 $$2$$ 的幂缩放可能改变舍入落点，但也没有这种精度保证。
 
-真正的下溢反例是主体绝对值约 $10^{-4}$、单个 outlier 为 $400$。按当前最大值取 $s=400/448$，主体缩放后约为 $1.12\times10^{-4}$。原始 FP8 论文中 E4M3 的最小正常数为 $2^{-6}$，最小正 subnormal 为 $2^{-9}$；上述数值甚至小于最近值舍入到零的半步阈值 $2^{-10}$，因而会量化成零。若这些小值使用独立 scale，它们就有机会重新落回正常数范围。这才是更细粒度 scale 能改善这组数值表示的原因。[FP8 论文，表 1](https://arxiv.org/abs/2209.05433)
+真正的下溢反例是主体绝对值约 $$10^{-4}$$、单个 outlier 为 $$400$$。按当前最大值取 $$s=400/448$$，主体缩放后约为 $$1.12\times10^{-4}$$。原始 FP8 论文中 E4M3 的最小正常数为 $$2^{-6}$$，最小正 subnormal 为 $$2^{-9}$$；上述数值甚至小于最近值舍入到零的半步阈值 $$2^{-10}$$，因而会量化成零。若这些小值使用独立 scale，它们就有机会重新落回正常数范围。这才是更细粒度 scale 能改善这组数值表示的原因。[FP8 论文，表 1](https://arxiv.org/html/2209.05433v2#S3)
 
-Per-tensor 适合分布相对稳定、outlier 可控的张量，也常是硬件/库最先支持的方案。模型越大、层间差异越明显，就越需要逐层独立 scale，而不是整个模型共用一份。
+Per-tensor 适合分布相对稳定、outlier 可控的张量，也常是硬件/库最先支持的方案。这里的 tensor 指一个具体的权重或 activation 张量，并不意味着整个模型的所有层共享一份 scale；不同层的范围差异，应由各自的统计与参数反映。
 
 ## Per-channel 与 Block Scaling
 
@@ -126,25 +134,27 @@ per-channel: one scale for each row/column
 per-block:   one scale for each fixed-size block
 ```
 
-若 block $g$ 的绝对最大值为 $a_g$：
+若 block $$g$$ 的绝对最大值为 $$a_g$$：
 
 $$
 s_g=\frac{a_g}{F_{max}}
 $$
 
-精度通常随 granularity 变细而提高，代价是：
+较细粒度可以减轻不同组的动态范围互相牵制，尤其是前面的下溢反例；是否降低具体张量的误差，仍要看选择的 scale 与舍入落点。代价包括更多 metadata、scale 加载与广播，以及 block axis、shard 边界和 kernel 布局的配合。
 
-- 更多 scale metadata；
-- scale load/broadcast/indexing；
-- tensor layout 与 block axis 必须匹配 kernel；
-- distributed shard 边界更复杂；
-- checkpoint 兼容性更严格。
+“block scaling”也不是唯一格式。以 Transformer Engine v2.3 的三个 recipe 为例：
 
-Transformer Engine 当前支持 current/delayed per-tensor scaling，也支持 FP8 block scaling；Blackwell 的 MXFP8 则为连续 32 个值提供 block scale，并可更广泛使用 E4M3。普通 FP8、block-scaled FP8 与 MXFP8 不能只看“都是 8 bit”就混用。
+| Recipe | 共享尺度的范围 | Scale 表示 | 需要区分的性质 |
+| --- | --- | --- | --- |
+| `Float8CurrentScaling` | 每个 tensor | 高精度 scale | 使用本轮数据计算范围 |
+| `Float8BlockScaling` | 配置的 1×128 或 128×128 block | FP32 容器，默认约束为 2 的幂，可放宽 | 不是 MX 的 32 元素格式 |
+| `MXFP8BlockScaling` | 指定方向上连续 32 个值 | E8M0，表示 2 的幂 | 块方向与归约轴、转置表示有关 |
+
+普通 block FP8 与 MXFP8 的 code 位宽都可能是 8，但 scale 的编码、块大小和布局不同，不能直接互换。按行和按列分组时，同一矩阵还会产生不同量化结果；该版本在需要矩阵及其转置时，从高精度输入分别量化两份表示，而不是转置已有低精度数据后再量化一遍。[TE v2.3 recipe 定义](https://github.com/NVIDIA/TransformerEngine/blob/5de3e1481cc1f5d6f7da6ac8938870b791b796db/transformer_engine/common/recipe/__init__.py)
 
 ## Current Scaling
 
-Current scaling 在使用 tensor 的同一步计算当前 $a_{max}$ 和 scale：
+Current scaling 在使用 tensor 的同一步计算当前 $$a_{max}$$ 和 scale：
 
 ```text
 X
@@ -154,9 +164,9 @@ X
   → GEMM/communication
 ```
 
-好处是 scale 跟随当前数据，突发分布变化不易使用过期范围。代价是 amax reduction 位于关键路径，distributed 场景还可能需要跨 ranks 同步，使所有 shards 使用一致 scale。
+好处是 scale 跟随当前数据，不会仅因沿用了旧范围而错过本轮极值。代价是 amax reduction 位于 cast 之前，必须读取当前 tensor 并得到统计；具体是否与其他算子融合，决定它在关键路径上增加多少开销。
 
-Transformer Engine 将它称为最简单的 FP8 recipe，但“概念简单”不等于运行成本为零。
+分布式场景不必一律全局同步。若多个 ranks 使用统一量化尺度，应在约定的通信组内协调统计；若每个 shard 带着自己的 scale 交给消费者，也可以保持局部尺度。数据由谁重建、scale 如何传递，必须先说清楚。
 
 ## Delayed Scaling
 
@@ -165,7 +175,7 @@ Delayed scaling 使用历史 amax 估计下一步 scale：
 ```text
 step t:
   quantize with scale derived from history up to t-1
-  collect amax_t asynchronously/for next update
+  record amax_t for a later scale update
 
 step t+1:
   use updated scale
@@ -177,7 +187,18 @@ $$
 s_{t+1}=f(a_t,a_{t-1},\ldots,a_{t-h+1})/F_{max}
 $$
 
-它把部分 amax/scale 工作移出当前关键路径，更容易做高吞吐训练。风险是分布突然变大时，旧 scale 可能饱和；窗口最大值又可能因一个旧 outlier 长期过于保守。
+它让本轮 cast 不必等待本轮 amax 决定 scale，统计与更新仍然要做，并不由算法名称保证异步执行。风险是分布突然变大时，旧 scale 可能饱和；窗口最大值又可能因一个旧 outlier 长期过于保守。
+
+具体算一遍：忽略 margin 等附加规则，历史 amax 为 1，因而旧反量化 scale 为 $$1/448$$。下一轮出现 10 时：
+
+| 选择方式 | 本轮使用的 scale | 10 缩放后的值 | 饱和并重建后的值 |
+| --- | --- | ---: | ---: |
+| 沿用历史范围 | $$1/448$$ | 4480，截为 448 | 1 |
+| 使用本轮范围 | $$10/448$$ | 448 | 10 |
+
+这是旧范围失配的构造例子，不说明 delayed scaling 总比 current 差。范围稳定时，历史统计可以很好地工作；真正需要警惕的是分布突变，以及大值离开以后，历史窗口还让小值长期使用过大的反量化 scale。
+
+TE v2.3 的 `DelayedScaling` 支持历史最大值、最近值或自定义算法；其 `reduce_amax` 默认在选定的 FP8 group 内同步，也允许关闭并保存各 rank 的局部状态。历史窗口、同步组与 checkpoint 中的 scale 状态，都属于 recipe 的一部分。[固定版本 DelayedScaling](https://github.com/NVIDIA/TransformerEngine/blob/5de3e1481cc1f5d6f7da6ac8938870b791b796db/transformer_engine/common/recipe/__init__.py)
 
 在线推理输入分布可因租户、模态和 prompt 改变，不能无条件把训练时稳定的 delayed recipe 套到所有 activation。
 
@@ -221,7 +242,13 @@ $$
 Y\approx s_xs_w(X_8W_8)
 $$
 
-若 $X$ 为 $M\times K$、$W$ 为 $K\times N$，per-row activation 与 per-output-channel weight scale 也可在点积外应用：$Y_{mn}\approx s_{x,m}s_{w,n}\sum_k(X_8)_{mk}(W_8)_{kn}$。但 scale 若沿 reduction 维 $K$ 分块变化，就必须对相应分组的部分和分别缩放，不能从整个点积中提取一个 $s_xs_w$；MXFP8/block-scaled GEMM 的 kernel 契约正包含这层含义。
+若 $$X$$ 为 $$M\times K$$、$$W$$ 为 $$K\times N$$，per-row activation 与 per-output-channel weight scale 也可在点积外应用：
+
+$$
+Y_{mn}\approx s_{x,m}s_{w,n}\sum_k(X_8)_{mk}(W_8)_{kn}
+$$
+
+但 scale 若沿 reduction 维 $$K$$ 分块变化，就必须对相应分组的部分和分别缩放，不能从整个点积中提取一个 $$s_xs_w$$；MXFP8/block-scaled GEMM 的 kernel 契约正包含这层含义。
 
 需要明确：
 
@@ -257,7 +284,7 @@ FP8 multiply 通常使用更高精度累加，输出也可为 BF16/FP16/FP32。�
 - 小 shape、不满足对齐的 linear；
 - 对 outlier 极敏感的模块。
 
-Transformer Engine 的 autocast 只让被认定为 FP8-safe 的模块进入低精度，而不是把 context 内所有运算盲目 cast。生产 PTQ 同样需要 per-module policy。
+Transformer Engine 的 `fp8_autocast` 控制相关 TE 模块的低精度行为，而不是把 context 内任意 PyTorch 运算都自动转换为 FP8。生产 PTQ 同样需要 per-module policy。[TE v2.3 FP8 primer](https://github.com/NVIDIA/TransformerEngine/blob/5de3e1481cc1f5d6f7da6ac8938870b791b796db/docs/examples/fp8_primer.ipynb)
 
 ## Weight-only FP8 与 W8A8 FP8
 
@@ -277,7 +304,7 @@ Transformer Engine 的 autocast 只让被认定为 FP8-safe 的模块进入低�
 
 ## FP8 KV Cache 是另一套误差传播
 
-KV Cache 保存每层历史 keys/values，被未来每个 Decode step 反复读取。FP8 KV 可以近似减半 BF16 KV 容量和带宽，但与 FP8 linear weights 不同：
+KV Cache 保存每层历史 keys/values，被未来每个 Decode step 反复读取。FP8 可以把 BF16 KV 的数值 payload 近似减半，真实缓存容量和读取流量还要加上 scale、对齐及具体实现的成本；它与 FP8 linear weights 不同：
 
 - KV 是请求动态产生的；
 - scale 可以在线生成，也可以由离线 calibration 固定；必须与 KV 量化、存储和读取时的粒度/版本一致；
@@ -306,7 +333,7 @@ amax/scale
   → scale-aware consumer/dequant
 ```
 
-如果网络主导，收益明显；小消息 Decode 中，quantization kernel 和 scale synchronization 可能抵消带宽节省。DeepEP 等库支持 FP8 dispatch，却可使用 BF16 combine，正是因为两个方向的精度/带宽目标可以不同。
+如果网络带宽主导，减少 payload 有机会改善时间；小消息 Decode 中，quantization kernel 和 scale synchronization 则可能抵消节省。一套系统也可以为 dispatch 与 combine 选择不同精度，例如前者低位传输、后者保留 BF16；两条方向的误差传播和带宽目标不必相同，仍需对应实现与实测支持。
 
 ## Prefill 与 Decode 的收益不同
 
@@ -332,7 +359,11 @@ $$
 
 ## Hardware Support 决定是不是“真 FP8”
 
-Hopper Tensor Cores 原生引入 FP8 计算能力，Ada 及之后部分路径也有支持；具体 recipe、shape 和库能力要看架构与软件版本。更老 GPU 即使框架能保存 FP8 tensor，也可能：
+硬件支持不是一个能概括全部 recipe 的布尔值。以 TE v2.3 的支持检查为例：普通 FP8 路径允许满足条件的 Ada 及更高计算能力设备；Ada 分支还要求 CUDA 至少 12.1、cuBLASLt 至少 12.1.3。MXFP8 检查要求 compute capability 至少 10.0；该版本的 generic block-scaled GEMM 检查则针对 Hopper、CUDA 至少 12.9。这些是固定软件路径的条件，不是格式本身只能在哪种机器上被解码的数学限制。[TE v2.3 支持检查](https://github.com/NVIDIA/TransformerEngine/blob/5de3e1481cc1f5d6f7da6ac8938870b791b796db/transformer_engine/pytorch/fp8.py)
+
+同版本默认 recipe 也按设备分支选择：compute capability 至少 10.0 时选择 MXFP8，否则选择 delayed scaling。可见“这个库默认 hybrid”或“设备支持 FP8，所以所有 FP8 recipe 都可用”都会丢掉必要条件。
+
+更老的设备或不匹配的算子路径，即使框架能保存 FP8 tensor，也可能：
 
 - 软件模拟；
 - 先转换 BF16/FP16 再算；
@@ -342,7 +373,7 @@ Hopper Tensor Cores 原生引入 FP8 计算能力，Ada 及之后部分路径也
 
 要从 profiler/kernel 名称、instruction throughput 与硬件文档确认，不要从 checkpoint dtype 推断。
 
-Shape alignment 也重要。Transformer Engine 文档当前对部分 FP8 Linear 要求维度可被 16 整除；其他库/硬件限制可能不同。Padding 能满足 alignment，却增加无效计算。
+Shape alignment 也重要。TE v2.3 primer 对相关 FP8 Linear 的两个矩阵维度提出可被 16 整除的要求；其他库、kernel 和硬件限制可能不同。Padding 能满足 alignment，却增加无效计算，不能把这个数字当作所有 FP8 指令的统一要求。[固定版本 primer](https://github.com/NVIDIA/TransformerEngine/blob/5de3e1481cc1f5d6f7da6ac8938870b791b796db/docs/examples/fp8_primer.ipynb)
 
 ## PTQ、QAT 与原生 FP8 Training
 
@@ -356,144 +387,127 @@ Shape alignment 也重要。Transformer Engine 文档当前对部分 FP8 Linear 
 
 ### FP8 Training
 
-从训练过程就使用 Transformer Engine recipe 管理 forward/backward formats、amax 和 scales。最终 checkpoint 的 master weights、保存格式与推理 artifact 仍需明确，不是训练使用 FP8 就自动产出任意 runtime 可加载的 FP8 inference checkpoint。
+从训练过程就使用低精度 recipe 管理 forward/backward formats、amax 和 scales。优化器状态、master weights、非 GEMM 输出并不因此全部变成 FP8。原始 FP8 格式论文的训练实验还采用了模拟 FP8：转换到低位可表示值后，算术在 FP16/BF16 等较高精度中完成，不能把这些结果解读为特定 FP8 硬件指令的跑分。[原论文 §4](https://arxiv.org/html/2209.05433v2#S4)
+
+最终 checkpoint 的 master weights、保存格式与推理 artifact 仍需明确，不是训练使用 FP8 就自动产出任意 runtime 可加载的 FP8 inference checkpoint。
 
 三者必须记录来源。相同 E4M3 codes，在不同 scale/granularity 下代表完全不同数值。
 
-## Checkpoint Manifest 至少包含什么
+## 枚举字节来核对格式与缩放
 
-```text
-model revision and tokenizer
-quantized modules / excluded modules
-FP8 encoding: E4M3 or E5M2 variant
-weight scale granularity and axis
-scale dtype/layout
-block size if block-scaled
-calibration/recipe metadata
-original/master weight policy
-packing/layout version
-target runtime/backend and minimum architecture
+8-bit 格式只有 256 种 bit pattern，可以直接枚举，而不需要下载模型。下面的标准库程序实现 E4M3FN、E5M2 解码，以及有限输入的最近偶数舍入和饱和。它将正负零分别保留，非有限输入的编码则主动拒绝；这是本程序的合同，不是所有 GPU cast 的统一行为。
+
+代码逐个枚举非负有限格点，用距离选择最近值，距离相同时按最低 fraction bit 的奇偶选择。它不是高效 kernel，也不模拟任意设备的中间累加；其作用是核验前面的格式表、正常数缩放、下溢与历史范围失配。
+
+<!-- example: fp8-format-and-scaling-reference -->
+```python
+from math import copysign, isfinite, isnan, isinf, isclose
+
+FORMATS = {"E4M3FN": (4, 3, 7), "E5M2": (5, 2, 15)}
+
+
+def decode_fp8(code, fmt="E4M3FN"):
+    if fmt not in FORMATS or type(code) is not int or not 0 <= code <= 255:
+        raise ValueError("supported format and one-byte integer required")
+    exponent_bits, fraction_bits, bias = FORMATS[fmt]
+    sign = -1.0 if code & 128 else 1.0
+    exponent = (code >> fraction_bits) & ((1 << exponent_bits) - 1)
+    fraction = code & ((1 << fraction_bits) - 1)
+    if fmt == "E4M3FN" and exponent == 15 and fraction == 7:
+        return float("nan")
+    if fmt == "E5M2" and exponent == 31:
+        return copysign(float("inf"), sign) if fraction == 0 else float("nan")
+    if exponent == 0:
+        value = (fraction / (1 << fraction_bits)) * 2.0 ** (1 - bias)
+    else:
+        value = (1 + fraction / (1 << fraction_bits)) * 2.0 ** (exponent - bias)
+    return copysign(value, sign)
+
+
+POSITIVE = {fmt: [(code, decode_fp8(code, fmt)) for code in range(128)
+                  if isfinite(decode_fp8(code, fmt))]
+            for fmt in FORMATS}
+
+
+def encode_finite(x, fmt="E4M3FN"):
+    if fmt not in FORMATS or not isfinite(x):
+        raise ValueError("supported format and finite value required")
+    table = POSITIVE[fmt]
+    magnitude = min(abs(x), table[-1][1])  # finite saturation
+    code, _ = min(table, key=lambda pair: (abs(pair[1] - magnitude), pair[0] & 1))
+    return code | (128 if copysign(1.0, x) < 0 else 0)
+
+
+def quantize_scaled(values, fmt="E4M3FN", scale=None):
+    values = list(values)
+    if fmt not in FORMATS or not values or any(not isfinite(v) for v in values):
+        raise ValueError("supported format and nonempty finite values required")
+    fmax = POSITIVE[fmt][-1][1]
+    if scale is None:
+        amax = max(abs(v) for v in values)
+        scale = amax / fmax if amax else 1.0
+    if not isfinite(scale) or scale <= 0:
+        raise ValueError("positive finite representable scale required")
+    normalized = [min(fmax, max(-fmax, v / scale)) for v in values]
+    codes = [encode_finite(v, fmt) for v in normalized]
+    restored = [scale * decode_fp8(code, fmt) for code in codes]
+    if any(not isfinite(v) for v in restored):
+        raise ValueError("reconstruction overflow")
+    return codes, restored, scale
+
+
+assert decode_fp8(0x7E) == 448.0
+assert decode_fp8(0x08) == 2 ** -6
+assert decode_fp8(0x01) == 2 ** -9
+assert decode_fp8(0x7B, "E5M2") == 57344.0
+assert decode_fp8(0x01, "E5M2") == 2 ** -16
+assert isnan(decode_fp8(0x7F))
+assert isinf(decode_fp8(0x7C, "E5M2"))
+assert copysign(1.0, decode_fp8(0x80)) == -1.0
+
+for fmt, expected in [("E4M3FN", 254), ("E5M2", 248)]:
+    finite_codes = [c for c in range(256) if isfinite(decode_fp8(c, fmt))]
+    assert len(finite_codes) == expected
+    assert all(encode_finite(decode_fp8(c, fmt), fmt) == c for c in finite_codes)
+
+assert decode_fp8(encode_finite(1.1)) == 1.125
+assert decode_fp8(encode_finite(1.1 * 256)) / 256 == 1.125
+_, with_outlier, _ = quantize_scaled([1e-4, 400.0])
+assert with_outlier[0] == 0.0
+_, small_group, _ = quantize_scaled([1e-4])
+assert isclose(small_group[0], 1e-4)
+assert quantize_scaled([0.0, 0.0])[1:] == ([0.0, 0.0], 1.0)
+assert isclose(quantize_scaled([10.0], scale=1 / 448)[1][0], 1.0)
+assert isclose(quantize_scaled([10.0])[1][0], 10.0)
+print({"E4M3FN_max": decode_fp8(0x7E),
+       "E5M2_max": decode_fp8(0x7B, "E5M2"),
+       "small_value_with_outlier": with_outlier[0]})
 ```
 
-加载器验证 tensor shape、scale shape、block axis、NaN/Inf 和 checksum。不能把 E4M3 数据按 E5M2 解码，也不能把 per-channel scales 当 per-tensor scalar 广播。
+这段代码还揭示了“8-bit”不足以描述数据：同一个 `0x38`，按 E4M3FN 解码为 1，按 E5M2 解码却为 0.5；负零与 FNUZ 的处理更不能混用。真正的 artifact 必须保存明确 variant，以及 scale 的 dtype、axis、block 大小和布局。
 
-## 数值验证看什么
+## 用三类信号定位 FP8 问题
 
-### 量化统计
+第一类是范围信号：逐层观察 amax、saturation、subnormal/zero rate 和 scale 分布。输出不准时，若大值大量饱和，先检查范围失配与历史更新；若主体大量变零，检查下溢和粒度；若始终在正常范围内却存在舍入误差，不能指望简单乘一个 2 的幂就增加 fraction 位数。NaN/Inf 还要沿着 cast、reduction、residual 追踪，因为不同 variant 的特殊值合同不同。
 
-```text
-amax distribution
-saturation/clipping rate
-underflow/zero rate
-scale range and outliers
-per-layer reconstruction error
-```
+第二类是布局与生命周期：使用相同 codes 和 scales 做独立重建，再核对真实 kernel 的输入、block axis、scale 广播和 epilogue。保存与恢复 delayed history 时，要确认各 rank 的状态和同步组。仅模拟 cast 正确，并不能证明低精度矩阵与 scale 在设备上对齐。
 
-### 模型输出
+第三类是完整执行成本：单 GEMM 的时间之外，还要纳入 amax、cast、bias/residual、输出转换、通信和 fallback。Prefill 与 Decode 分别测量，线上看 TTFT、TPOT 和满足质量/SLO 的 goodput。若 worker 加载 BF16 后在线转换，冷启动时间与转换峰值显存也属于成本。
 
-- hidden/logits cosine 与 error；
-- greedy token divergence；
-- perplexity；
-- reasoning/code/math/多语言；
-- long-context 与 structured output；
-- MoE routing/负载变化；
-- speculative decoding acceptance rate。
-
-### 非有限值
-
-逐层监控 NaN/Inf，尤其是 reduction、softmax input、residual 和 dynamic scale。E4M3/E5M2 对 Inf/NaN 的编码约定不同，错误处理不能照搬 FP16。
-
-质量验证要使用真实 kernel。Fake cast/dequant 正确不能证明 scale layout、Tensor Core input 或 fused epilogue 正确。
-
-## 性能验收拆成四层
-
-### 单 GEMM
-
-扫实际 $M,N,K$、dtype、scale granularity，比较 BF16/FP8 kernel latency 与数值。
-
-### 单层
-
-包含 amax、cast、GEMM、bias/residual/output cast，避免只测核心 matmul。
-
-### 模型迭代
-
-分解 Attention、MLP/MoE、通信、scale/cast；检查 CUDA Graph/compile coverage。
-
-### Serving
-
-```text
-TTFT / TPOT / goodput
-weight and KV memory
-max concurrency
-HBM/NVLink/NIC bytes
-startup conversion/capture time
-quality and fallback rate
-```
-
-若加载 BF16 后在线转 FP8，还要把转换时间与峰值 host/GPU memory 计入 worker 冷启动。
-
-## 常见误区
-
-### “8-bit 所以一定是 BF16 两倍快”
-
-端到端还有 Attention、memory、scale/cast、小 shape 和调度；硬件峰值不是应用 speedup。
-
-### “FP8 有指数，所以不需要 calibration”
-
-外部 scale 仍决定有效范围。Per-tensor outlier 仍会浪费 precision。
-
-### “权重 FP8 就是 W8A8”
-
-Activation 可能仍 BF16，kernel 也可能在线 dequant。
-
-### “模型支持 FP8，KV 和通信自然也支持”
-
-三者有不同 kernel、layout 和 scale 生命周期。
-
-### “E4M3 总比 E5M2 好”
-
-E4M3 精度更高但范围更小；格式要匹配 tensor 和 scaling recipe。
-
-### “Block 越小精度越好，所以总是更优”
-
-Scale metadata、layout、kernel support 和 load overhead 也随之增加。
-
-## 一条生产落地路径
-
-1. **建立 BF16 基线**：保存质量、分层时间、显存与真实 traffic；
-2. **只量化权重**：验证 checkpoint/layout 和容量收益；
-3. **确认 kernel**：目标 GPU 上是否真正走 FP8 Tensor Core；
-4. **加入 activation FP8**：选择 static/current/delayed/block scaling；
-5. **逐层排除敏感模块**：通过消融决定，而非固定名单；
-6. **分别评测 P/D**：关注大 GEMM 与小 batch 固定开销；
-7. **再评估 KV/通信**：每条路径独立做质量与性能实验；
-8. **集成 compile/Graph**：确认 scale buffers、amax history 和地址生命周期；
-9. **发布 manifest/cache**：固定硬件、runtime、recipe 与 artifact revision；
-10. **监控饱和与回退**：流量分布变化后 scale 可能失效。
-
-每步只增加一种低精度边界，出现问题才能判断是 weight、activation、KV、通信还是 kernel integration。
+这些信号最后仍要回到模型任务：层重建误差、logits 差异和 perplexity 可以定位变化，代码、数学、多语言、长上下文等任务则衡量是否满足具体用途。减少一个局部误差指标，不会自动保证所有生成质量改善。
 
 ## 小结
 
-FP8 的核心不是一个 8-bit dtype，而是“编码格式 + scale granularity + scale 更新 recipe + 计算/累加/output 精度”的完整契约。
+FP8 同时包含两层数轴：每个值内部的 exponent/fraction，以及 tensor 或 block 外部的 scale。前者决定有效位数和格式范围，后者决定当前数据怎样落到这些格点上。更换编码、缩放粒度或更新策略，改变的是不同部分的误差与成本，不能只看 dtype 名称。
 
-可以记住八点：
-
-1. E4M3 用更多 mantissa 换精度，E5M2 用更多 exponent 换范围；
-2. scale 约定负责把 tensor 分布映射进 FP8；它可以隐式为 1，但不能忽略其数值与方向；
-3. Current、delayed、per-tensor、per-channel、block scaling 有不同成本；
-4. Weight FP8、W8A8 GEMM、FP8 KV 与 FP8 communication 是四条独立路径；
-5. GEMM 输入、accumulator、output 和 epilogue 精度都要明确；
-6. Prefill 更可能利用计算吞吐，Decode 更关注权重带宽与 scale 固定开销；
-7. 真正收益依赖原生硬件、匹配 shape 的 kernel 与完整 runtime coverage；
-8. Saturation、underflow、质量、显存和 SLO goodput 必须一起验收。
+E4M3FN 与 E5M2、普通 block FP8 与 MXFP8、current 与 delayed，都需要明确到各自的数值合同。只有再对齐乘法输入、累加、输出和实际 kernel，存储上的低位宽才有机会转化成运行时收益。
 
 FP8 使用浮点编码处理低精度表示；[SmoothQuant]({% post_url 2026-08-02-smoothquant-w8a8-activation-outliers %}) 则处理整数 W8A8 的另一种困难：通过等价缩放，把难量化的 activation 分布迁移到更容易细粒度处理的 weights。两者的编码与执行契约不同，可以对照阅读。
 
 ## 参考资料
 
-- [FP8 Formats for Deep Learning](https://arxiv.org/abs/2209.05433)
-- [NVIDIA Transformer Engine: FP8 Current Scaling](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/fp8_current_scaling/fp8_current_scaling.html)
-- [NVIDIA Transformer Engine: FP8 and FP4 Primer](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/examples/fp8_primer.html)
-- [NVIDIA Transformer Engine: FP8 Blockwise Scaling](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/fp8_blockwise_scaling/fp8_blockwise_scaling.html)
-- [NVIDIA TensorRT: Quantization Schemes](https://docs.nvidia.com/deeplearning/tensorrt/latest/inference-library/quantized-types-schemes.html)
+- [FP8 Formats for Deep Learning v2](https://arxiv.org/html/2209.05433v2)，格式、转换策略与模拟实验范围。
+- [ONNX Float8 类型定义](https://onnx.ai/onnx/technical/float8.html)，FN/FNUZ、特殊值与 E8M0。
+- [Transformer Engine v2.3 recipe 定义](https://github.com/NVIDIA/TransformerEngine/blob/5de3e1481cc1f5d6f7da6ac8938870b791b796db/transformer_engine/common/recipe/__init__.py)。
+- [相同版本的支持判定与默认 recipe](https://github.com/NVIDIA/TransformerEngine/blob/5de3e1481cc1f5d6f7da6ac8938870b791b796db/transformer_engine/pytorch/fp8.py) 和 [FP8 primer](https://github.com/NVIDIA/TransformerEngine/blob/5de3e1481cc1f5d6f7da6ac8938870b791b796db/docs/examples/fp8_primer.ipynb)。
+- [CUDA Math API 12.8 FP8 转换](https://docs.nvidia.com/cuda/archive/12.8.0/cuda-math-api/cuda_math_api/group__CUDA__MATH__FP8__MISC.html)。
