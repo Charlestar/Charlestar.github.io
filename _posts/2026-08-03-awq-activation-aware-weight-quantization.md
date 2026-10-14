@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "AWQ：为什么 4-bit 权重量化要先观察 Activation"
-subtitle: "从显著通道、等价缩放到 W4A16 Kernel 与端到端 Serving 收益"
+subtitle: "从两通道算例理解等价缩放、组内耦合、前向搜索与真实 W4A16 执行"
 date: 2026-08-03 09:00:00 +0800
 last_modified_at: 2026-10-15
 author: iStar
@@ -13,447 +13,449 @@ mathjax: true
 tags: [模型量化, GPU优化, LLM推理]
 ---
 
-把 LLM 权重从 BF16 压到 4-bit，最直观的方法是按一组权重的最大绝对值确定 scale，再四舍五入到有限整数范围。模型体积确实缩小了，但少数对输出非常重要的权重可能被粗糙量化，误差沿几十层传播后明显损害生成质量。
+把一组权重映射到 4-bit 整数，首先要解决的是“有限的格点怎样分配”。按最大值确定范围、再就近取整，看起来已经合理：最大的权重没有溢出，其余权重也落在这个范围里。然而，权重数值接近，不代表量化它们的代价接近。一个很小的权重，如果经常乘上幅度很大的输入，它的少量舍入误差也可能明显改变输出。
 
-AWQ（Activation-aware Weight Quantization）的关键观察是：判断权重是否重要，不能只看权重本身，还要看它乘到怎样的 activation 上。同样大小的两个权重，如果一个输入通道经常具有很大的激活幅度，它的量化误差就会对输出产生更大影响。
+AWQ（Activation-aware Weight Quantization）从这里出发：离线观察线性层的输入激活，用等价的通道缩放重新安排权重的数值分布，再进行规则的低比特分组量化。它要保护重要通道，但不希望最终格式变成“到处散落少量 FP16 权重”的不规则混合精度布局。
 
-AWQ 使用少量 calibration data 收集 activation statistics，寻找值得保护的 input channels，再通过数学等价的缩放，让这些通道的权重更耐量化。它仍然生成规则的低比特权重，而不是让少数权重保留 FP16 的混合精度稀疏布局，因此更容易映射到高效 kernel。
+这也解释了名字中容易产生的误解：Activation-aware 表示**量化决策参考激活**，并不表示激活也量化到 4-bit。AWQ 的典型部署目标是 W4A16，即低比特权重配合 FP16/BF16 激活。下面从一次真实取整的计算开始，逐步看缩放怎样起作用，以及它为什么不是越大越好。
 
-## 先从普通 Weight-only Quantization 开始
+## 1. 权重误差为什么必须放回输入中衡量
 
-考虑线性层：
-
-$$
-Y=XW
-$$
-
-权重 $W$ 以 group 为单位量化。对一组有限实数权重 $w$，用整数位宽 $b\ge2$ 的简化对称量化可以写成：
+沿用本系列的矩阵方向：
 
 $$
-q_{max}=2^{b-1}-1
+X\in\mathbb R^{M\times K},\qquad
+W\in\mathbb R^{K\times N},\qquad Y=XW.
 $$
 
-$$
-s=\frac{\max |w|}{q_{max}}
-$$
+$$M$$ 是参与本次计算的 token 数，$$K$$ 是输入通道，$$N$$ 是输出通道。将量化再反量化后的权重记为 $$\widehat W$$，定义误差 $$E_W=W-\widehat W$$，就有：
 
 $$
-q=\operatorname{clip}
-\left(\operatorname{round}\left(\frac{w}{s}\right),
--q_{max},q_{max}\right)
+Y-\widehat Y=XE_W.
 $$
 
-上面的 min-max scale 要求 $\max|w|>0$；全零组可设正 scale 为 1、codes 全为零，避免除零。这里只是对称量化示意，不是 AWQ artifact 的唯一格式：官方实现也支持带 zero point 的非对称方案，编码范围与 packing 需单独记录。
+一个输入通道的误差贡献，不只是权重差多少，还取决于这一列输入有多大。例如两个通道的权重误差同为 $$0.02$$，输入幅度分别是 $$0.2$$ 和 $$8$$，单项输出误差的幅度就是 $$0.004$$ 和 $$0.16$$。只比较权重自身的 MSE，会漏掉这个差异。
 
-推理时近似恢复：
-
-$$
-\hat w=sq
-$$
-
-误差为：
+AWQ 使用的通道统计量是激活绝对值的平均值：
 
 $$
-\Delta w=w-\hat w
+a_j=\frac1M\sum_{t=1}^{M}\lvert X_{t,j}\rvert.
 $$
 
-输出误差则是：
+论文的保护实验发现，按激活而非权重幅度选择少量通道保留 FP16，可以显著改善其特定低比特实验的质量；表 1 使用的是 OPT、INT3、group size 128 等设置。因此“保护约 1%”是理解方法的实验线索，不是所有模型统一采用的阈值，也不是最终 AWQ 格式必须残留 1% FP16 权重。[AWQ v5，§3.1](https://arxiv.org/html/2306.00978v5#S3.SS1)
+
+不过，$$a_j$$ 只是一个易于收集的统计代理，不是完整的重要性度量。考虑两个输入：
 
 $$
-\Delta Y=X\Delta W
+X_1=[1,1],\qquad X_2=[1,-1],\qquad
+E_W=\begin{bmatrix}1\\-1\end{bmatrix}.
 $$
 
-最后一个式子说明，只最小化 $\lVert\Delta W\rVert$ 并不等于最小化实际输出误差。某 input channel 的 activation $X_j$ 越大，该通道权重误差对 $Y$ 的放大越明显。
-
-## “Activation-aware”到底看什么
-
-AWQ 用 calibration samples 运行模型，统计每层 input channels 的 activation magnitude。一个简化的重要性指标可以写为：
+它们各通道的绝对值统计完全相同，但输出误差分别是 $$0$$ 和 $$2$$。原因是通道之间会相关，误差也会抵消或叠加。严格的层输出平方误差包含 $$X^TX$$ 的交叉项：
 
 $$
-a_j=\operatorname{mean}_{tokens}|X_{:,j}|
+\lVert XE_W\rVert_F^2
+=\operatorname{tr}\!\left(E_W^TX^TXE_W\right).
 $$
 
-原论文发现，保护少量与显著 activation channels 相关的权重，就能显著降低量化损失。这里的“约 1% salient weights”是论文实验观察，不是所有模型都必须使用一个固定 1% 阈值。
+AWQ 并不是只凭一个幅度统计就宣告量化完成：幅度用来构造缩放候选，候选还要通过前向输出误差来选择。
 
-重要的是判断顺序：
+## 2. 先固定一个能手算的 4-bit 量化合同
 
-```text
-calibration tokens
-  → observe input activation channels
-  → identify channel importance
-  → search equivalent scaling/clipping
-  → quantize all weights into regular groups
+为了把缩放机制算清楚，下面采用独立的对称教学量化器：一个非零 group 共享步长 $$\Delta$$，使用整数子码域 $$[-7,7]$$，最近值舍入采用 ties-to-even：
+
+$$
+\Delta=\frac{\max_i\lvert w_i\rvert}{7},\qquad
+q_i=\operatorname{clip}\!\left(
+\operatorname{RNE}(w_i/\Delta),-7,7\right),\qquad
+\widehat w_i=\Delta q_i.
+$$
+
+这 15 个整数可由 4-bit 容纳，但**没有使用全部 16 个码值**。它不是官方 artifact 的编码声明，也不是在调用官方仓库的对称分支。后文会单独说明固定实现实际使用的 unsigned codes、zero point 与 packing。
+
+全零组单独设 $$\Delta=1$$、codes 全为 $$0$$，保证步长为正且重建准确。所有例子只接收有限实数；NaN、Inf 不是可参与 absmax 搜索的普通输入。教学代码中的每个数组就是一个完整 group，不涉及补齐尾组。真实格式是否允许尾组，必须由它自己的 shape 合同决定。
+
+现在取一个 token、两个输入通道和一个输出通道：
+
+$$
+X=[10,1],\qquad
+W=\begin{bmatrix}0.1\\1\end{bmatrix},\qquad
+Y=10\times0.1+1\times1=2.
+$$
+
+两个权重属于同一组，$$\Delta=1/7$$，得到：
+
+$$
+q=\begin{bmatrix}1\\7\end{bmatrix},\qquad
+\widehat W=\begin{bmatrix}1/7\\1\end{bmatrix},\qquad
+\widehat Y=\frac{10}{7}+1=2.428571\ldots
+$$
+
+误差主要来自原本更小的权重 $$0.1$$：它乘上的输入恰好大得多。若只按权重绝对值决定保护对象，很容易忽视它。
+
+## 3. 等价缩放能改善结果，也能把结果重新变差
+
+给输入通道选择正缩放 $$s_j$$，令 $$S=\operatorname{diag}(s)$$。在实数代数中：
+
+$$
+XW=(XS^{-1})(SW).
+$$
+
+也就是输入第 $$j$$ 列除以 $$s_j$$、权重第 $$j$$ 行乘以 $$s_j$$。没有量化时，两者严格抵消；在有限精度计算中则应检查相应的浮点误差。加入量化后，计算变成：
+
+$$
+\widehat Y_S=(XS^{-1})\mathcal Q(SW),
+$$
+
+其中 $$\mathcal Q$$ 表示量化再反量化，不只是整数编码。取 $$S=\operatorname{diag}(10,1)$$：
+
+$$
+XS^{-1}=[1,1],\qquad
+SW=\begin{bmatrix}1\\1\end{bmatrix}.
+$$
+
+两个权重都落在格点上，重建后输出恰好是 $$2$$。重要的不是“把大输入变小”这个动作本身，而是**改变了同一 group 内两个权重的相对分布**，使有限格点更适合这次计算。
+
+但如果进一步取 $$S=\operatorname{diag}(100,1)$$，结果会怎样？此时：
+
+$$
+XS^{-1}=[0.1,1],\quad
+SW=\begin{bmatrix}10\\1\end{bmatrix},\quad
+\Delta'=10/7.
+$$
+
+重建权重变成 $$[10,10/7]^T$$，输出再次变成 $$2.428571\ldots$$。第一个通道虽然被准确表示，却把整组的步长抬高，损害了另一个通道。
+
+| 通道缩放 $$s$$ | 变换后权重 | group 步长 | 量化后的输出 |
+| --- | --- | --- | --- |
+| $$[1,1]$$ | $$[0.1,1]^T$$ | $$1/7$$ | $$2.428571\ldots$$ |
+| $$[10,1]$$ | $$[1,1]^T$$ | $$1/7$$ | $$2$$ |
+| $$[100,1]$$ | $$[10,1]^T$$ | $$10/7$$ | $$2.428571\ldots$$ |
+
+更一般地，在没有 clipping、按最近值舍入的前提下，变换域权重的单元素重建误差至多为 $$\Delta'_g/2$$。还原到原通道单位后，误差界变成：
+
+$$
+\left\lvert W_{j,n}-\frac{\mathcal Q(SW)_{j,n}}{s_j}\right\rvert
+\le\frac{\Delta'_g}{2s_j}.
+$$
+
+所以保护效果取决于 $$\Delta'_g/s_j$$，而不是只看 $$s_j$$ 是否增大。如果同组步长没有同比增大，这个误差界可以变小；但实际舍入误差会随格点位置跳变，界变小也不等于每个元素的实际误差都单调下降。论文对显著通道的分析与表 2 同样讨论了过强缩放伤害其他通道的现象。[AWQ v5，§3.2](https://arxiv.org/html/2306.00978v5#S3.SS2)
+
+下面的标准库代码直接计算上述结果，并搜索下一节要介绍的 20 个候选。这里沿用教学对称量化器，**不是官方 AWQ 校准或 GPU 推理复现**。
+
+<!-- example: awq-channel-scaling-and-grid -->
+```python
+from math import isclose, isfinite, sqrt
+
+def sym_qdq(values):
+    if not values or not all(isfinite(v) for v in values):
+        raise ValueError("a group must contain finite values")
+    peak = max(abs(v) for v in values)
+    step = peak / 7.0 if peak else 1.0
+    if not isfinite(step) or step <= 0:
+        raise ValueError("step is outside this float reference's range")
+    codes = [min(7, max(-7, round(v / step))) for v in values]
+    restored = [step * q for q in codes]
+    if not all(isfinite(v) for v in restored):
+        raise ValueError("nonfinite reconstruction")
+    return codes, restored, step
+
+def scaled_forward(x, w, scales):
+    if not (len(x) == len(w) == len(scales)):
+        raise ValueError("channel counts must match")
+    if not x or not all(isfinite(v) for v in x + w):
+        raise ValueError("finite nonempty inputs required")
+    if not all(isfinite(s) and s > 0 for s in scales):
+        raise ValueError("scales must be finite and positive")
+    scaled_x = [a / s for a, s in zip(x, scales)]
+    scaled_w = [a * s for a, s in zip(w, scales)]
+    for original, transformed in [(x, scaled_x), (w, scaled_w)]:
+        if any(not isfinite(v) or (old != 0 and v == 0)
+               for old, v in zip(original, transformed)):
+            raise ValueError("transform outside this float reference's range")
+    codes, restored, step = sym_qdq(scaled_w)
+    products = [a * b for a, b in zip(scaled_x, restored)]
+    if any(not isfinite(v) or (a != 0 and b != 0 and v == 0)
+           for a, b, v in zip(scaled_x, restored, products)):
+        raise ValueError("product outside this float reference's range")
+    y = sum(products)
+    if not isfinite(y):
+        raise ValueError("nonfinite output")
+    return y, codes, step
+
+x, w = [10.0, 1.0], [0.1, 1.0]
+target = sum(a * b for a, b in zip(x, w))
+for scales, expected in [([1.0, 1.0], 17 / 7),
+                         ([10.0, 1.0], 2.0),
+                         ([100.0, 1.0], 17 / 7)]:
+    y, codes, step = scaled_forward(x, w, scales)
+    assert isclose(y, expected, abs_tol=1e-12)
+    print("scales", scales, "codes", codes, "step", step, "y", y)
+
+activation_meanabs = [abs(v) for v in x]  # one calibration token here
+history = []
+for i in range(20):
+    ratio = i / 20
+    raw = [max(a ** ratio, 1e-4) for a in activation_meanabs]
+    normalizer = sqrt(max(raw) * min(raw))
+    scales = [v / normalizer for v in raw]
+    y, _, _ = scaled_forward(x, w, scales)
+    history.append(((y - target) ** 2, ratio, y))
+best = min(history, key=lambda item: item[0])
+assert len(history) == 20 and history[-1][1] == 0.95
+assert best[0] < history[0][0]
+print("best (MSE, ratio, output):", best)
+
+assert sym_qdq([0.0, 0.0]) == ([0, 0], [0.0, 0.0], 1.0)
+assert sym_qdq([-1.0, 1.0])[0] == [-7, 7]
+assert sym_qdq([0.5, 1.5, 7.0])[0] == [0, 2, 7]  # ties-to-even
+for common in [0.1, 3.0, 10.0]:
+    y, _, _ = scaled_forward(x, w, [common, common])
+    assert isclose(y, 17 / 7, abs_tol=1e-12)
+try:
+    sym_qdq([float("nan")])
+except ValueError:
+    pass
+else:
+    raise AssertionError("non-finite input was accepted")
 ```
 
-AWQ 不是在在线推理时为每个 token 动态挑重要权重，也不是让 router 决定精度。Activation statistics 用于离线产生量化参数，部署后权重布局仍然固定。
+这组输入的 20 候选搜索选中 $$\alpha=0.85$$，输出约为 $$2.008955$$，比不缩放改善，但没有达到手工选择 $$[10,1]$$ 的精确结果。搜索只比较规定的候选，不是在所有正缩放向量中求全局最优；这里候选的通道尺度比最多为 $$10^{0.95}$$，并不包含手工例子的比值 $$10$$。
 
-## 为什么直接保留 1% FP16 不够理想
+最后的公共缩放测试揭示了一个重要性质：在这个理想 absmax 量化器里，把整个 group 同乘一个正数，步长也同比改变，不能免费改善相对分辨率。AWQ 真正利用的是**通道之间不一样的缩放**。
 
-一种保护方式是：重要权重保持 FP16，其余 INT4。但任意散布的 mixed precision 会带来：
+这份 Python 浮点参考只用于检查上述有限算例。它会拒绝关键变换或乘积产生非有限值、非零量下溢为零等超范围情况，即使另一种运算顺序可能恢复出有限结果，也不尝试修复；这不是任意动态范围的模型量化库，更不是 FP16/BF16 逐 bit 仿真。
 
-- 需要保存位置索引；
-- kernel 同时走两条计算路径；
-- 稀疏 gather/scatter 破坏连续访存；
-- FP16 残差结果需要额外合并；
-- 不同层的稀疏模式难以统一优化。
+## 4. 20 个候选怎样从统计量变成量化参数
 
-质量可能提高，硬件执行却不规则。AWQ 的目标是通过等价变换保护通道，同时让最终权重仍以规则 4-bit groups 存储，保留 weight-only kernel 的工程效率。
-
-## 等价缩放怎样保护显著通道
-
-对 input channel $j$ 选择正 scale $r_j$。令对角矩阵 $S=\operatorname{diag}(r)$，则：
+论文把高维缩放向量限制在一个简单的搜索族中：
 
 $$
-XW=(XS^{-1})(SW)
+s_j=a_j^{\alpha}.
 $$
 
-也就是：
+$$\alpha$$ 越大，通道间激活幅度差异对缩放的影响越强。它不是梯度训练出来的逐权重参数，也不是直接指定“哪些权重保留高精度”。
+
+固定到官方 `llm-awq` 的 commit `d6e797a`，`_search_module_scale` 使用 20 个比例 $$\alpha\in\{0,0.05,\ldots,0.95\}$$，不含 $$1$$。每个候选先执行：
 
 $$
-X'_j=\frac{X_j}{r_j},
-\qquad
-W'_{j,:}=r_jW_{j,:}
+u_j=\max(a_j^{\alpha},10^{-4}),\qquad
+s_j=\frac{u_j}{\sqrt{\max_i u_i\;\min_i u_i}}.
 $$
 
-在没有量化时，这个变换严格等价。对 $W'=SW$ 做 group quantization 时，显著 input channels 对应的权重被放大，在有限整数级别中获得更高的相对分辨率；运行时再对 activation 做逆缩放，保持原线性层语义。
+注意 clamp 在归一化之前。因此最终 $$s_j$$ 不保证仍大于等于 $$10^{-4}$$。全零激活通道在正指数下先被 clamp 为正值；$$\alpha=0$$ 的候选在该实现中得到全 1 向量。这里的正下界防止除零，但不代表任意极端统计量在有限精度中都安全，实际校准仍应检查有限性和数值范围。
 
-可以把量化后的计算写成：
+对每个候选，实现临时放大相关 Linear 的输入通道权重，执行 pseudo quantization，再除回通道缩放。这样在保持原输入 $$X$$ 不变的情况下，就能评价等效权重 $$S^{-1}\mathcal Q(SW)$$。它比较原模块输出和候选模块输出的 MSE，将输出差转换为 FP32 后平方取均值，然后恢复原模块状态，避免候选之间累积修改。检查对象还可能是包含多个投影的 Attention 或 MLP，而不只是一个独立 Linear。[固定版 auto_scale.py](https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/awq/quantize/auto_scale.py)
+
+因此，“AWQ 不做 reconstruction”需要讲清楚比较对象：它不像 [GPTQ]({% post_url 2026-10-15-gptq-second-order-reconstruction %}) 那样，利用二阶信息对未量化权重连续补偿，也不通过反向传播训练这些缩放参数；但它**确实根据校准数据上的前向输出误差搜索 scale 和 clipping**。不反传并不等于不看输出，更不等于校准数据完全无关。
+
+激活平均幅度决定搜索空间，前向 MSE 决定这个空间里选哪个候选。前者压缩了搜索成本，后者补上了仅看通道幅度遗漏的一部分相互作用。不过，这仍不是完整任务质量的全局优化；某些语言、模态或 MoE expert 没有被校准样本覆盖时，局部统计和候选选择也可能失真。
+
+## 5. Clipping 优化的是哪一种误差
+
+通道缩放之后，一个 group 中仍可能有少数大权重拉宽范围。Clipping 允许牺牲这些端点，换取主体权重更细的步长。对上面的教学量化器，给定阈值 $$c_g>0$$：
 
 $$
-Y
-\approx (XS^{-1})Q(SW)
+w_i^{\mathrm{clip}}=\operatorname{clip}(w_i,-c_g,c_g),\qquad
+\widehat w_i=\mathcal Q(w_i^{\mathrm{clip}}).
 $$
 
-其中 $Q$ 表示量化再反量化近似。
+它的目标不是让裁剪后的权重最接近原权重，而是让**量化后的计算**尽量保留原输出。
 
-scale 不能无限增大。放大一个 channel 可能抬高它所在 group 的最大值，让其他权重的量化 step 变粗。AWQ 因此根据 activation statistics 搜索缩放强度，并结合 weight clipping，在“保护显著通道”和“不要伤害同组其他权重”之间取舍。
+固定版 `auto_clip.py` 的默认参数是 `n_grid=20, max_shrink=0.5`，实际循环只有 10 个候选，阈值为原 group absmax 的 $$1,0.95,\ldots,0.55$$ 倍，不含 $$0.5$$。它按 output channel 和输入 group 分别比较该 group 的部分点积输出，在采样 token 上求 MSE，再独立选择阈值；并且按模块名跳过包含 `q_`、`k_`、`query`、`key`、`Wqkv` 的 Linear，不是所有投影一律裁剪。[固定版 auto_clip.py](https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/awq/quantize/auto_clip.py)
 
-## 一个两通道例子
+这个代理很实用，但它与整层输出 MSE 有区别。设某输出通道的第 $$g$$ 组误差为：
 
-假设两个 input channels：
+$$
+e_g=X_{:,G_g}\left(W_{G_g,n}-\widehat W_{G_g,n}\right).
+$$
 
-```text
-channel 0 average |activation| = 0.2
-channel 1 average |activation| = 8.0
+独立组目标关注各个 $$\lVert e_g\rVert_2^2$$；整层目标却是：
+
+$$
+\left\lVert\sum_g e_g\right\rVert_2^2
+=\sum_g\lVert e_g\rVert_2^2
++2\sum_{g<h}e_g^Te_h.
+$$
+
+前者没有保留组间交叉项。下面是仍用对称教学合同构造的明确反例：
+
+$$
+X=[1,2,-1,0.5],\qquad
+W=[0.1,0.2,0.1,0.2]^T,
+$$
+
+每两个权重一组，原始输出为 $$0.5$$。先定义便于下表阅读的“近似输出减原输出”误差，它与上式 $$e_g$$ 相反，但不影响平方误差。
+
+| 组 | 不裁剪时的部分输出误差 | 独立搜索选中的收缩系数 | 搜索后的部分输出误差 |
+| --- | --- | --- | --- |
+| $$[0.1,0.2]$$，输入 $$[1,2]$$ | $$+1/70$$ | $$0.95$$ | $$-2/175$$ |
+| $$[0.1,0.2]$$，输入 $$[-1,0.5]$$ | $$-1/70$$ | $$0.8$$ | $$-2/175$$ |
+
+每组的绝对误差都从约 $$0.014286$$ 降到 $$0.011429$$，但原先相互抵消的总误差变成同向叠加：输出从准确的 $$0.5$$ 变成 $$0.477142857\ldots$$。下面完整执行这 10 个候选的搜索，不靠手工指定最优阈值。
+
+<!-- example: awq-clipping-local-versus-global -->
+```python
+from math import isclose, isfinite
+
+def quantize_clipped(group, factor):
+    if not group or not all(isfinite(v) for v in group):
+        raise ValueError("finite nonempty group required")
+    if not isfinite(factor) or not 0 < factor <= 1:
+        raise ValueError("invalid clipping factor")
+    peak = max(abs(v) for v in group)
+    if peak == 0:
+        return [0.0 for _ in group]
+    threshold = peak * factor
+    if threshold == 0 or not isfinite(threshold):
+        raise ValueError("threshold is outside this float reference's range")
+    step = threshold / 7
+    if not isfinite(step) or step <= 0:
+        raise ValueError("step is outside this float reference's range")
+    clipped = [min(threshold, max(-threshold, v)) for v in group]
+    restored = [step * min(7, max(-7, round(v / step))) for v in clipped]
+    if not all(isfinite(v) for v in restored):
+        raise ValueError("nonfinite reconstruction")
+    return restored
+
+def dot(a, b):
+    assert len(a) == len(b)
+    return sum(x * y for x, y in zip(a, b))
+
+groups = [([1.0, 2.0], [0.1, 0.2]),
+          ([-1.0, 0.5], [0.1, 0.2])]
+original, baseline, selected = [], [], []
+local_before = local_after = 0.0
+for x, w in groups:
+    reference = dot(x, w)
+    original.append(reference)
+    base = dot(x, quantize_clipped(w, 1.0))
+    baseline.append(base)
+    candidates = []
+    for i in range(10):
+        factor = 1 - i / 20
+        prediction = dot(x, quantize_clipped(w, factor))
+        candidates.append(((prediction - reference) ** 2, factor, prediction))
+    loss, factor, prediction = min(candidates, key=lambda item: item[0])
+    selected.append(prediction)
+    local_before += (base - reference) ** 2
+    local_after += loss
+    print("factor", factor, "before", base - reference,
+          "after", prediction - reference)
+
+target = sum(original)
+assert isclose(target, 0.5, abs_tol=1e-12)
+assert isclose(sum(baseline), target, abs_tol=1e-12)
+assert isclose(sum(selected), 0.5 - 4 / 175, abs_tol=1e-12)
+assert local_after < local_before
+assert (sum(selected) - target) ** 2 > (sum(baseline) - target) ** 2
+print("group proxy:", local_before, "->", local_after)
+print("whole output:", target, "->", sum(baseline), "->", sum(selected))
 ```
 
-两通道权重量化绝对误差都约为 0.02。它们对输出的典型误差贡献约为：
+这不是“AWQ clipping 总会变差”的结论，也不是官方非对称量化的实验结果。它说明了一件更具体的事：**独立 group 误差改善，不足以证明整层输出必然改善**。同样，整层 MSE 改善也不能直接推导完整模型的生成质量。理解优化目标的范围，比把某个局部指标称为“精度”更重要。
 
-```text
-channel 0: 0.2 × 0.02 = 0.004
-channel 1: 8.0 × 0.02 = 0.16
-```
+## 6. 逆缩放放在哪里，取决于计算图
 
-第二个通道的影响大约高 40 倍。AWQ 会倾向为 channel 1 选择更强的保护 scale，而不是因为它的原始 weight magnitude 未必最大就忽略它。
+到目前为止，公式都把 $$XS^{-1}$$ 显式写出来。如果每个 Linear 前都单独加除法，可能引入额外计算和中间张量。实际模型改造会尽量把逆缩放吸收到前面的算子，但这个操作必须保持所有消费分支的语义。
 
-这个例子只说明机制。真实线性层包含多个 outputs、group coupling、非线性和层间传播，最终 scale 需要在 calibration forward 上搜索和验证。
+对于 LayerNorm 输出 $$X=Z\odot\gamma+\beta$$，可以把 $$\gamma$$ 和 $$\beta$$ 都除以 $$s$$，并让所有消费该输出的 Linear 输入通道权重乘以 $$s$$。不能只改 $$\gamma$$ 而遗漏 $$\beta$$；Q、K、V 共享这个输入时也不能只修改其中一个投影。RMSNorm 没有相应 bias 时，就没有那一项需要处理。当前 Linear 的输出 bias 不属于这个输入通道变换，不应跟着任意乘除。
 
-## Group Size 决定精度、元数据与 Kernel Shape
+如果前面是另一个可直接配对的 Linear，则需要相应缩放其输出行和 bias；若中间经过 reshape、分支、门控乘法或共享参数，还要结合具体图结构判断，不能把“前一个 Linear”机械当作总能吸收的位置。
 
-4-bit 权重通常不是整个 matrix 共享一个 scale，而是每 $G$ 个权重使用一组 scale/zero point。Group 越小：
-
-- scale 更贴合局部分布，量化误差通常更低；
-- scale 元数据更多；
-- dequantization/indexing 更复杂；
-- kernel 的 vectorized load 和 packing 可能受影响。
-
-Group 越大：
-
-- metadata 少、layout 简单；
-- 一个 outlier 更容易扩大整组 quantization step；
-- AWQ scaling/clipping 的组内耦合更强。
-
-官方 AWQ 示例常出现 W4、group size 128 等配置，但它不是跨模型/硬件的固定最优值。Checkpoint 中必须明确：
-
-```text
-weight bits
-group size and group axis
-symmetric/asymmetric scheme
-scales and zero points dtype/layout
-AWQ channel scales / clipping results
-packing order
-excluded modules
-```
-
-仅写一个 `quantization=awq` 不足以让任意 runtime 正确加载。
-
-## Clipping 为什么有帮助
-
-Min-max scale 被最大 outlier 决定。若极少数极端权重并不重要，却把量化范围拉得很宽，大多数权重会浪费整数 levels。
-
-把 clipping threshold 从 $m=\max|w|$ 调到 $m'<m$：
+尤其不能把缩放随意穿过 GELU：
 
 $$
-q=\operatorname{round}
-\left(\frac{\operatorname{clip}(w,-m',m')}{s'}\right)
+\operatorname{GELU}(h/s)\ne\operatorname{GELU}(h)/s
 $$
 
-其中沿用对称示意，$0<m'<m$、$s'=m'/q_{max}$。它会牺牲被裁剪 outliers，却给主体权重更细的 resolution。AWQ 搜索阶段结合 activation-aware objective 选择 scale/clipping，而不是只优化 weight MSE。
+一般成立的是“先计算非线性输出，再做逆缩放”。固定实现的 `ScaledActivation.forward` 正是返回 `act(x) / scales`，而非 `act(x / scales)`；随后下游 Linear 权重乘以对应尺度。[固定版 qmodule.py](https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/awq/quantize/qmodule.py)
 
-Clipping 结果是每层/每组量化 artifact 的一部分，不能在 serving load 时随意重算成另一套 min-max 范围。
+这个小例子只检查浮点图变换，不做任何量化。正确写法保持输出，错误地穿过 GELU 则改变原模型函数。
 
-## AWQ 是 PTQ，不需要反向传播
+<!-- example: awq-scaled-activation-folding -->
+```python
+from math import erf, isclose, sqrt
 
-AWQ 属于 Post-Training Quantization。典型流程：
+def gelu(value):
+    return 0.5 * value * (1 + erf(value / sqrt(2)))
 
-```text
-FP16/BF16 checkpoint
-  → prepare representative calibration text
-  → collect layer activation statistics
-  → search channel scales and clipping
-  → fake/pseudo quantization evaluation
-  → pack real INT4 weights + metadata
-  → runtime kernel validation
-  → task and serving benchmark
+def linear(row, weights):
+    assert len(row) == len(weights)
+    return [sum(row[k] * weights[k][n] for k in range(len(row)))
+            for n in range(len(weights[0]))]
+
+h = [-1.0, 0.5]
+scales = [2.0, 0.5]
+weights = [[0.4, -0.3], [0.7, 0.8]]  # K x N
+scaled_weights = [[scales[k] * v for v in row]
+                  for k, row in enumerate(weights)]
+reference = linear([gelu(v) for v in h], weights)
+correct = linear([gelu(v) / s for v, s in zip(h, scales)], scaled_weights)
+wrong = linear([gelu(v / s) for v, s in zip(h, scales)], scaled_weights)
+assert all(isclose(a, b, abs_tol=1e-12) for a, b in zip(reference, correct))
+assert max(abs(a - b) for a, b in zip(reference, wrong)) > 0.01
+print("reference:", reference)
+print("after activation, correct:", correct)
+print("before activation, wrong:", wrong)
 ```
 
-原方法不依赖 backpropagation，也不做基于 calibration set 的权重重建优化。这降低了量化成本和对特定 calibration samples 过拟合的风险，并有利于迁移到 instruction-tuned、多模态模型。
+因此，“等价缩放通常可以融合”不等于“所有缩放都自动零成本”。有些位置能够通过参数重写吸收，有些需要保留输出缩放或由 kernel 显式融合；如何处理是计算图与实现的问题，不是代数恒等式独自能保证的。
 
-不需要训练不等于 calibration data 无关。数据应覆盖实际输入的语言、领域、长度和模态；过窄样本可能遗漏线上常见的显著通道分布。
+## 7. 从浮点 Q/DQ 到真正的 AWQ Artifact
 
-## W4A16 的“A16”意味着什么
-
-AWQ 常部署为 W4A16：权重以 4-bit 存储，activation 保持 FP16/BF16。它主要减少：
-
-- 权重 HBM 容量；
-- 从 HBM 读取权重的带宽；
-- checkpoint/权重传输体积。
-
-这不一定表示 Tensor Core 直接执行原生 INT4×FP16 矩阵乘。不同 kernel 可能：
-
-1. 读取 packed INT4；
-2. 按 group load scale/zero；
-3. 在寄存器中 dequantize 到 FP16/BF16；
-4. 与 activation 做矩阵乘并累加；
-5. 融合 bias/residual 等后处理。
-
-真正的数据类型与指令路径由 GPU 架构和 kernel 决定。模型文件小了，不代表执行一定使用最快的硬件指令。
-
-## 权重显存能省多少
-
-理想权重主体从 BF16 的 2 bytes 降到 INT4 的 0.5 bytes，即 4 倍压缩。但实际还包括：
+前面的 $$[-7,7]$$ 例子方便计算，但部署不能只凭“4-bit”三个字决定格式。固定版 `real_quantize_model_weight` 要求 `zero_point=True`，对应 `WQLinear` 仅支持 4-bit。其 pseudo quantization 对每个 group 计算：
 
 $$
-M_{AWQ}
-=M_{packed\ INT4}
-+M_{scales/zeros}
-+M_{unquantized\ layers}
-+M_{alignment}
-+M_{runtime\ workspace}
+\Delta=\frac{\max(\max(w)-\min(w),10^{-5})}{15},\qquad
+z=\operatorname{clip}\!\left(-\operatorname{RNE}(\min(w)/\Delta),0,15\right).
 $$
 
-Embedding、LM head、norm、少量 sensitive modules 可能不量化；group scales 和 padding 也占空间。因此应读取加载后的真实 GPU memory，而不是直接用总参数量除以 4。
+随后先舍入 $$w/\Delta$$，再加 $$z$$ 并截断到 $$[0,15]$$，最后重建 $$\Delta(q-z)$$。零组由正下界避免除零。这是源码的具体数值顺序，不应拿另一套“相似的 min-max 公式”当成逐位相同实现。[固定版 quantizer.py](https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/awq/quantize/quantizer.py)
 
-AWQ 不压缩 KV Cache。长上下文/高并发场景中，权重节省出的显存可以转给 KV，从而增加并发；但每 token KV bytes 仍由层数、KV heads、head dim 和 KV dtype 决定。
+该文件的 `zero_point=False` 分支还包含在本分支赋值前引用 `min_val` 的断言，正常断言开启时不能据此宣称“官方对称路径已经可直接运行”。本文对称代码是自包含的数值参考，与该分支无关；这也不改变上面非对称 real-quant 入口的合同。
 
-## 为什么 Decode 往往比 Prefill 更受益
+Pseudo quantization 返回的是浮点重建权重。它能估计舍入后的输出，但这些权重仍放在浮点 tensor 中，并没有因为数值落在低比特格点上就自动节省存储。真正转换还要生成整数 codes、打包、保存 group scales 和零点信息，并替换执行算子。
 
-Decode 每步 token 数小，GEMM 的算术强度较低，反复读取大权重，容易 memory-bandwidth-bound。4-bit weight-only 可以显著减少每步权重 bytes。
+这里也要区分矩阵方向：本文的 $$W$$ 是 $$K\times N$$；PyTorch Linear 的存储通常是 $$N\times K$$，所以源码按最后一维连续分组，对应本文沿输入 $$K$$ 轴分组。输入通道缩放在本文左乘 $$S$$，在源码里体现为每个输出行的对应输入列乘以 scale。把两个方向混用，会出现形状能广播、语义却完全错误的问题。
 
-Prefill 的矩阵 $m$ 更大，同一块权重被更多 tokens 复用，GEMM 更可能 compute-bound。此时 INT4 unpack/dequant 开销、kernel 吞吐与 FP16 Tensor Core 的差异决定是否加速。
+固定版 `WQLinear` 不只是把 8 个 nibble 顺序塞进一个 int32：它有输入维重排、组内次序重排、输出行 interleave，并把 packed 权重存为 int16 tensor；scales 和 `scaled_zeros` 也有转置与 padding，其中后者保存的是 $$-\Delta z$$ 形式的浮点偏移。`forward` 按输入行数选择 GEMV 或 GEMM CUDA 入口。[固定版 qmodule.py 的 packing 与 forward](https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/awq/quantize/qmodule.py)
 
-简化 roofline 判断：
+这意味着，group size、输入轴、整除/对齐要求、zero-point 表示、scale dtype、packing 次序和排除量化的模块共同定义 artifact。这个固定实现的量化入口要求 group size 整除输入维，kernel packing 也有额外 shape 约束，不能把教学代码任意长度的数组直接当成可部署 shape。两个文件都叫 AWQ，不代表可以互换 decoder。
+
+一个具体的对齐检查是：先用 artifact 的 codes、scales 和零点规则解出小块浮点权重，再与量化前搜索所使用的 Q/DQ 参考比较，最后比较相同输入下真实算子的输出。若参考正常、packed 路径异常，应优先检查格式与 kernel 合同，不能把它混成“AWQ 算法精度不好”。
+
+## 8. W4A16 节省的是什么，不能从名字推导什么
+
+W4A16 首先描述权重存储与激活的精度组合，不自动规定累加精度、最终输出 dtype，也不保证硬件直接执行某种 INT4×FP16 指令。TinyChat 在论文所述平台上采用 on-the-fly dequantization，把解包、反量化与矩阵计算融合，避免先把全部重建权重写回 DRAM；具体 operand、累加器和输出仍要看所用 kernel，而不是只看算法名称。[AWQ v5，§4.2](https://arxiv.org/html/2306.00978v5#S4.SS2)
+
+只看权重 payload，16-bit 到 4-bit 是 4 倍压缩；加入 metadata 就不是精确 4 倍。例如若采用上述固定实现、group size 为 128、scale 和 `scaled_zeros` 都用 FP16，忽略 padding 时，每个权重平均占用：
 
 $$
-T\approx\max
-\left(
-\frac{FLOPs}{Compute\ Throughput},
-\frac{Bytes}{Memory\ Bandwidth}
-\right)
+4+\frac{16+16}{128}=4.25\ \text{bits}.
 $$
 
-AWQ 明显降低 `Bytes`，但若 workload 已由 `FLOPs/Throughput` 主导，或者 W4 kernel 的 compute throughput 较差，端到端不一定更快。
+相对 16-bit 权重主体约为 $$16/4.25\approx3.76$$ 倍压缩。这只是这个 metadata 合同下的预算，不是所有 AWQ 格式统一的 bits/weight；padding、未量化的 embedding/norm/head、bias、运行时 workspace 还要另外计入。
 
-所以必须分开测 Prefill TTFT 和 Decode TPOT，不能只用模型加载显存推断速度。
+同样，AWQ 不自动量化 KV Cache。权重变小能给 KV 留出更多显存，但每个 token 的 KV 容量仍由模型结构和 KV dtype 决定。长上下文、高并发时，节省权重容量和降低单步权重带宽是两个不同收益，不能都归成“推理提速”。
 
-## Packing Layout 是 Runtime 兼容性的核心
+从计算上看，decode 小 batch 的线性层往往反复读取权重，压缩可能减少主要带宽流量；prefill 中较多 token 复用相同权重，计算占比上升，解包、反量化与 W4 kernel 的吞吐会影响收益。group size 也同时影响数值与系统：小 group 能更局部地设置范围，但 metadata 更多、载入与索引更复杂，不能声称“缩小 group 一定让实际输出误差或端到端延迟单调变好”。
 
-两个 checkpoint 都写着 W4A16 AWQ，packing 仍可能不同：
+论文 TinyChat 的加速结果属于它的模型、硬件、baseline 与软件实现组合，不能直接转移成另一套 runtime 的速度承诺。应把同输入下的数值对齐，与相同负载下的 prefill、decode 和显存结果分别确认：加载成功、文件变小和任务质量保持，是三件不同的事。
 
-- 8 个 4-bit values 如何排列到 32-bit word；
-- signed/unsigned code；
-- zero point 是否存在；
-- scales 按 output/input/group 哪个维度排列；
-- GEMM tile 需要怎样 interleave；
-- 权重是否预转置；
-- 特定 GPU kernel 的 alignment。
+## 9. 把 AWQ 放回量化方法之间的关系
 
-Runtime 若按另一 layout 解包，最坏情况不是报错，而是输出数值完全错误。转换工具应输出 schema/version，加载时校验 tensor shapes、packing metadata 和小规模 dequant checksum。
+[SmoothQuant]({% post_url 2026-08-02-smoothquant-w8a8-activation-outliers %}) 也使用 $$XW=(XS^{-1})(SW)$$，但典型目标是 W8A8：把难处理的激活幅度差异转移一部分给权重，帮助激活进入 INT8。AWQ 的典型目标是 W4A16：激活仍保留高精度，用它来判断怎样为低比特权重安排更合适的分组数值分布。同一个代数恒等式，服务的是不同的量化瓶颈。
 
-不要把“能加载模型”当作正确性证明。
+GPTQ 则从校准输入对应的层重建目标出发，用二阶信息在逐步量化时补偿其余权重。AWQ 限制在激活统计构造的 scale 候选和 clipping 候选中，前向评价而不反向训练。二者都可能产出 grouped 4-bit 权重，但方法、格式和 kernel 兼容性不是同一层概念，不能只凭同样写着 W4 就互换实现或直接比较结论。
 
-## AWQ 与 GPTQ 的边界
+理解 AWQ 可以抓住一条连续的因果链：输出误差经过输入放大，因此观察激活；观察结果用来构造通道缩放，但缩放改变整组步长，所以要做前向搜索；局部搜索只优化代理目标，所以仍要检查整体质量；而数值质量要转成真实节省，还必须有匹配的 packing 和 W4A16 执行路径。
 
-两者都常用于低比特 weight-only PTQ，但思路不同：
-
-- GPTQ 以近似二阶信息和逐列/块重建降低量化误差；
-- AWQ 根据 activation 识别重要通道，通过等价缩放和 clipping 保护它们，不依赖反向传播/重建。
-
-最终都可能产出 4-bit grouped weights，但量化参数、packing 和 kernel backend 未必相同。选择不应只比较 perplexity，还要同时看：
-
-```text
-calibration/quantization time
-task quality
-supported model modules
-runtime/kernel/hardware availability
-Prefill/Decode performance
-checkpoint portability
-```
-
-算法名字不能替代 backend 兼容矩阵。
-
-## AWQ 与 SmoothQuant 的边界
-
-SmoothQuant 的目标是 W8A8：同时量化权重和 activation。它利用等价缩放把难量化的 activation outliers 部分迁移到较易量化的 weights。
-
-AWQ 的典型目标是 W4A16：activation 保持高精度，用 activation statistics 决定怎样保护低比特 weights。
-
-```text
-AWQ:
-  activation informs weight protection
-  common execution: W4A16
-
-SmoothQuant:
-  shift quantization difficulty from activation to weight
-  target execution: W8A8
-```
-
-二者都使用 activation-aware 等价变换，但解决的精度组合和 kernel 路径不同，不能因为都含 scaling 就视为同一算法。
-
-## 哪些层更敏感
-
-实际量化配置可能对以下模块做不同处理：
-
-- embedding / LM head；
-- attention Q/K/V/O projections；
-- MLP gate/up/down；
-- MoE routed/shared experts；
-- multimodal projector/vision encoder；
-- very small matrices 或不满足 group alignment 的层。
-
-是否跳过某层必须通过 ablation 决定。逐层 error proxy 可帮助定位，但最终生成质量是多层误差共同作用，不能只用单层 MSE 排序。
-
-MoE 还要考虑每个 expert calibration 覆盖率：冷 expert 在小 calibration set 中可能几乎没有 token，activation statistics 不可靠。可以扩大数据、按路由覆盖率检查，或对低覆盖 experts 使用更保守策略。
-
-## 质量验证不能只看 Perplexity
-
-最低验证矩阵包括：
-
-### 数值
-
-- 逐层 output cosine/error；
-- logits difference 与 top-k overlap；
-- FP fake-quant 与 real packed-kernel 对齐。
-
-### 语言模型
-
-- perplexity；
-- knowledge/reasoning/code/math；
-- multilingual 与长上下文；
-- instruction following 与结构化输出。
-
-### Serving 语义
-
-- greedy generation diff；
-- sampling 分布与拒绝/安全策略；
-- speculative decoding acceptance rate；
-- LoRA/Adapter compatibility；
-- multimodal inputs。
-
-Fake quant 质量正常、real kernel 输出错误，通常说明 packing/dequant/kernel contract，而不是 AWQ 搜索本身。
-
-## 性能评测要固定哪些条件
-
-```text
-model and AWQ artifact revision
-bits / group size / symmetry / zero point
-runtime and quantization backend
-GPU architecture
-kernel implementation/version
-Prefill token buckets
-Decode concurrency and context distribution
-KV dtype/cache capacity
-CUDA Graph/compile settings
-```
-
-报告：
-
-- 实际权重与总 GPU memory；
-- 可分配 KV blocks/最大并发；
-- TTFT、TPOT、E2E 与 goodput；
-- GEMM/kernel 分解；
-- HBM bandwidth 与 SM utilization；
-- 首次加载/权重 repack 时间；
-- 质量指标。
-
-如果只比较“AWQ 模型能在一张卡运行，BF16 不能”，这是容量收益，不是同硬件同 workload 的速度比较。两种价值都重要，但口径要分开。
-
-## 为什么某些 Runtime 中 AWQ 反而更慢
-
-常见原因：
-
-- 当前 GPU 没有匹配形状的高效 W4A16 kernel；
-- runtime 在每次 forward 做额外 repack/dequant；
-- group size/layout 与 kernel 不匹配；
-- Prefill compute-bound，FP16/BF16 GEMM 更快；
-- 小矩阵的 scale/index overhead 比省下带宽更大；
-- Graph/compile 无法覆盖量化 custom op；
-- CPU scheduling 或 Attention 才是瓶颈；
-- 节省显存后没有提高 batch/concurrency，容量收益没有转化为 goodput。
-
-vLLM 文档中的硬件/量化支持会随版本更新，历史版本也曾明确提示其 AWQ 路径可能低于未量化吞吐。部署前应查询当前 backend 并在目标 GPU 上实测，不能把论文 TinyChat 数据套到另一套 runtime。
-
-## 从 BF16 Checkpoint 到生产 AWQ Artifact
-
-### 1. 固定源模型
-
-记录 model/tokenizer/Adapter revision，验证 BF16 baseline。
-
-### 2. 构造 Calibration Set
-
-覆盖实际语言、领域、长度、结构化输出和多模态输入；记录每层/每 expert token 覆盖率。
-
-### 3. 搜索与 Fake Quant
-
-生成 channel scales/clipping；在未用于 calibration 的 validation set 做质量评估。
-
-### 4. Real Packing
-
-按目标 runtime/backend layout 写出 INT4、scales、zeros 与 manifest；不要先按一种 layout 打包再在线昂贵转换。
-
-### 5. Kernel 对齐
-
-小输入逐层比较 fake-dequant reference 与真实 packed kernel，覆盖非对齐 shape、Prefill/Decode、TP/EP shard。
-
-### 6. Serving Benchmark
-
-同流量 trace 比较 BF16/AWQ 的质量、显存、TTFT/TPOT/goodput，而不是只跑离线 tokens/s。
-
-### 7. 发布与回滚
-
-AWQ artifact 使用独立 revision/checksum；worker readiness 前验证 kernel/backend；保留 BF16 或已验证格式的回退路径。
-
-## 小结
-
-AWQ 的“Activation-aware”不是量化 activation，而是用 activation distribution 判断哪些 input channels 的权重误差更重要。它通过等价 channel scaling 和 clipping 保护显著权重，同时保持规则的低比特 grouped layout，典型执行为 W4A16。
-
-可以抓住七点：
-
-1. 输出误差是 $X\Delta W$，只看 weight magnitude/MSE 不足以判断重要性；
-2. AWQ 离线观察 activation，部署时不做逐 token 动态精度选择；
-3. 等价变换放大显著通道权重、反向缩放 activation，在量化前后平衡误差；
-4. Group size、clipping、scale/zero 和 packing layout 共同定义 artifact；
-5. W4A16 主要降低权重容量/带宽，不会压缩 KV Cache，也不保证原生 INT4 计算；
-6. Decode 更可能受益，Prefill 是否加速取决于目标 kernel 与 roofline；
-7. 质量、real packed-kernel 正确性、显存和 SLO goodput 必须一起验收。
-
-AWQ 解释了 weight-only INT4 怎样尽量保住质量。若希望 activation 也进入低精度，可对照 [SmoothQuant]({% post_url 2026-08-02-smoothquant-w8a8-activation-outliers %}) 与 [W4A8]({% post_url 2026-08-04-w4a8-progressive-quantization-kernel %})：它们还要处理 activation 的范围、计算 operand 与累加精度，不能只沿用权重量化的结论。
+AWQ 的价值不是找出一批“永远重要”的权重，而是在规则低比特格式的约束下，利用输入信息重新分配量化误差。把这件事与任意精度混用、完整模型重训练、KV Cache 压缩和端到端加速区分开，才能准确理解它解决了什么。
 
 ## 参考资料
 
-- [AWQ Paper: Activation-aware Weight Quantization for LLM Compression and Acceleration](https://arxiv.org/abs/2306.00978)
-- [MIT HAN Lab: llm-awq Official Repository](https://github.com/mit-han-lab/llm-awq)
-- [AWQ Project Page](https://hanlab.mit.edu/projects/awq)
-- [vLLM: Quantization](https://docs.vllm.ai/en/stable/features/quantization/)
-- [NVIDIA TensorRT: Working with Quantized Types](https://docs.nvidia.com/deeplearning/tensorrt/latest/inference-library/work-quantized-types.html)
-- [SmoothQuant Paper](https://arxiv.org/abs/2211.10438)
+- [AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration，arXiv v5](https://arxiv.org/html/2306.00978v5)：本文依据的方法与系统说明；该修订发布于 2024-07-18，研究最初发表于 2023 年。
+- [固定版 auto_scale.py](https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/awq/quantize/auto_scale.py)：通道统计、20 候选搜索、模块输出目标与参数折叠。
+- [固定版 auto_clip.py](https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/awq/quantize/auto_clip.py)：分组部分输出误差与 clipping 候选。
+- [固定版 quantizer.py](https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/awq/quantize/quantizer.py)、[qmodule.py](https://github.com/mit-han-lab/llm-awq/blob/d6e797a42b9ef7778de8ee2352116e0f48a78d61/awq/quantize/qmodule.py)：Q/DQ、zero-point、packing 和执行入口；全文源码边界固定在同一个 commit，不代表其他版本的支持矩阵。

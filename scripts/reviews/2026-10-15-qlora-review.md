@@ -50,3 +50,5 @@ writer 静止后独立全文审阅概念、维度、公式、数值、编码、�
 ## Root 本地验收
 
 全文、完整专项及最终 review 已读回；7 组在官方 FP32 位型断言补充后复跑通过。全部 26 个 JavaScript 套件、既有 Python、94 篇元数据与历史 coverage 检查通过。实际生产构建生成 109 个 HTML 页面、134 个文件，站点检查通过，87 篇中的 899 个行内和 955 个独立公式通过数学检查。浏览器读回本篇最终 merge 参数时点与严格 byte-container guard：55 个 MathJax 容器、0 个错误、无美元残留，1265 像素视口无横向溢出；实际截图核对 dA/dB/dX 推导的排版。没有据此声称实际模型/GPU/optimizer 实验。
+
+发布验证：提交 `3ab326907a03d8048ac03cdaaf38d24c5a9c2961` 对应工作流 `38620735326` 的 build/deploy 均成功；浏览器读回线上最终 merge 时点说明、byte-container guard 及 55 个 MathJax 容器，0 个错误、无美元残留和横向溢出。

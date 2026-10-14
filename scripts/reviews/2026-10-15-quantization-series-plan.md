@@ -17,9 +17,9 @@
 | 30 | 2022-09-12 | FP8 格式与缩放 | E4M3/E5M2、正常/非正规数、current/delayed scaling、scale 方向与 K 维约束；编码边界与等比例缩放反例 | 保留旧 URL，逐篇校订 | 全文复审已上线，见下方发布证据 |
 | 40 | 2022-10-31 | GPTQ 层重建与误差补偿 | 校准输入、二次目标、近似二阶信息、逐列补偿、分块/Cholesky、damping；独立二次目标算例 | 新增 | 已上线，见下方发布证据 |
 | 50 | 2022-11-18 | SmoothQuant 等价通道缩放 | alpha 的真实作用、输入维与输出维、folding 分叉、W8A8 的运行时边界；缩放等价性与量化后误差 | 保留旧 URL，逐篇校订 | 全文复审已上线，见下方发布证据 |
-| 60 | 2023-05-23 | QLoRA 与 NF4 | 非均匀码本、分块 absmax、double quant、冻结基座与 LoRA 梯度、存储/计算精度、合并再量化；小码本与梯度数据流 | 新增 | 正文复审与本地验收完成，待发布验证 |
-| 70 | 2023-06-01 | AWQ 保护显著权重 | activation salience、等价缩放的 group 耦合、clipping、W4A16 packing；权重 MSE 与输出误差不同的反例 | 保留旧 URL，逐篇校订 | 已迁系列，待本轮全文复审 |
-| 80 | 2024-02-05 | KIVI 的非对称 KV 量化 | K/V 不同量化轴、group 与残余高精度区、增量写入、Attention 误差；实际布局和容量计算 | 新增 | 待调研 |
+| 60 | 2023-05-23 | QLoRA 与 NF4 | 非均匀码本、分块 absmax、double quant、冻结基座与 LoRA 梯度、存储/计算精度、合并再量化；小码本与梯度数据流 | 新增 | 已上线，见下方发布证据 |
+| 70 | 2023-06-01 | AWQ 保护显著权重 | activation salience、等价缩放的 group 耦合、clipping、W4A16 packing；权重 MSE 与输出误差不同的反例 | 保留旧 URL，逐篇校订 | 全文复审及本地验收通过，待发布核验 |
+| 80 | 2024-02-05 | KIVI 的非对称 KV 量化 | K/V 不同量化轴、group 与残余高精度区、增量写入、Attention 误差；实际布局和容量计算 | 新增 | 调研与写作/审核来源预读完成，待逐篇写作 |
 | 90 | 2024-03-30 | QuaRot 的正交旋转 | Hadamard 与离群值、图不变性、norm/残差/非线性/RoPE 边界、离线 folding 与在线开销；等价及不等价算例，比较 SpinQuant | 新增 | 待调研 |
 | 100 | 2024-05-07 | W4A8 与 QServe | 两级整数表示、protected range、nibble 解包、scale 与零点修正、计算布局；枚举边界与 unpack reference | 保留旧 URL，逐篇校订 | 已迁系列，待本轮全文复审 |
 | 110 | 2025，NVFP4 专题 | NVFP4 与块缩放 | E2M1、MXFP4 与 NVFP4 区别、块/全局 scale、metadata、转置和 kernel 契约；枚举 FP4 levels 与真实字节成本 | 新增 | 待调研 |
@@ -100,3 +100,11 @@ NVFP4 KV Cache、QuantSpec、FP4 Attention 等既有文章继续保留在原主�
 新增 `_posts/2026-10-15-qlora-nf4-frozen-base.md`，完成 NF4 码表/打包、double quant 预算、冻结输入梯度及 merge 等全文独立复审。两块实际正文 Python 和 7 组专项通过，包括独立正态分位构造及官方 FP32 位型、256 个字节组合、奇数尾、ceil/offset 账单、5 个标量与 16 个矩形矩阵坐标的梯度差分、重新量化反例。全部 26 个 JavaScript 套件、既有 Python、94 篇元数据和历史 coverage 通过；实际构建生成 109 个 HTML 页面、134 个文件，站点/数学检查通过。
 
 本地浏览器读回最终稿：55 个 MathJax 容器、0 个错误、无美元残留和横向溢出，梯度公式截图正常。发布验证待推送后登记；没有运行真实 bitsandbytes/PyTorch、模型微调、paged optimizer 或 GPU 实验。
+
+文章提交 `3ab326907a03d8048ac03cdaaf38d24c5a9c2961` 已推送；[工作流 38620735326](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38620735326) 的 build/deploy 均成功。浏览器实际读回 [线上文章](https://charlestar.github.io/2026/10/15/qlora-nf4-frozen-base/) 的最终 merge 时点说明与 byte-container guard，55 个 MathJax 容器、0 个错误、无美元残留或横向溢出。
+
+### 第七篇 AWQ 旧文全文校订
+
+保留原日期与 URL，完成激活统计、20 候选、组间误差反例、非线性折叠及固定 artifact 的独立复审。三块真实 Python 和 7 组专项通过，含独立高精度前向搜索、100 个联合 clipping 组合与真实源布局的 padding 预算。全部 27 个 JavaScript 套件、既有 Python、94 篇元数据/历史 coverage 通过。生产构建生成 109 个 HTML 页面、134 个文件，87 篇数学文章的 1002 个行内与 963 个独立公式通过结构检查。
+
+本地浏览器读到 125 个 MathJax 容器、0 个错误、无美元残留和整页横向溢出，clipping 公式截图正常。发布证据待推送后登记；没有真实 AWQ 校准、Torch、官方 packing、TinyChat、GPU 或模型质量实验。
