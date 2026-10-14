@@ -38,7 +38,7 @@
   order: 70
   title: GPU Kernel、编译器与低精度
   short_title: GPU Runtime
-  description: 从执行图和 kernel 组合深入采样、量化与生产性能验证。
+  description: 从执行图、编译器和 kernel 组合深入采样、GPU 执行与生产性能验证；模型量化另有独立系列。
 
 - id: distributed-training
   order: 80
@@ -51,3 +51,9 @@
   title: 模型服务能力与 Agent Infra
   short_title: Agent Infra
   description: 连接 Adapter、多模态编码、结构化生成、工具协议和可恢复的 Agent 工作流。
+
+- id: model-quantization
+  order: 100
+  title: 模型量化
+  short_title: 模型量化
+  description: 从整数数值契约出发，沿技术演进理解异常值、权重重建、低比特微调、KV Cache、旋转与块缩放，最后连接质量评估和实际部署。

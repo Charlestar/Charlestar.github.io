@@ -3,11 +3,11 @@ layout: post
 title: "W4A8：4-bit Weight 怎样喂给 8-bit Tensor Core"
 subtitle: "从 Progressive Quantization、寄存器解包到 QServe 的系统协同设计"
 date: 2026-08-04 09:00:00 +0800
-last_modified_at: 2026-09-09
+last_modified_at: 2026-10-15
 author: iStar
 catalog: true
-series: gpu-runtime-precision
-series_order: 60
+series: model-quantization
+series_order: 100
 technology_year: 2024
 mathjax: true
 tags: [模型量化, GPU优化, LLM推理]
@@ -461,7 +461,7 @@ W4A8 的难点不在把两个 weights 塞进一个 byte，而在让 4-bit storag
 8. W4、A8 与 KV4 解决不同瓶颈，不能互相代替；
 9. 只有 real kernel、coverage、质量和 SLO goodput 同时通过，W4A8 才算落地。
 
-至此，量化路径已经从 FP8、SmoothQuant W8A8、AWQ W4A16 延伸到 W4A8。下一篇将回到低精度 kernel 的通用支撑层：FlashInfer 怎样把不同 attention、GEMM、sampling 与量化实现组织成可组合的 Serving primitives。
+W4A8 将权重压缩与 8-bit 计算连接起来，仍然离不开配套 kernel。[FlashInfer]({% post_url 2026-05-13-flashinfer-deep-dive %}) 属于另一条运行时阅读路径，可以用来理解 Attention、GEMM、sampling 与量化实现怎样组织为可组合的 Serving primitives，而不是把某个量化算法直接等同于完整推理引擎。
 
 ## 参考资料
 

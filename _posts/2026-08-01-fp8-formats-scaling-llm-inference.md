@@ -3,11 +3,11 @@ layout: post
 title: "FP8 推理：E4M3、E5M2、Scale 与 Tensor Core 到底怎样配合"
 subtitle: "分清权重存储、Activation 量化、GEMM、KV Cache 与通信的五条低精度路径"
 date: 2026-08-01 09:00:00 +0800
-last_modified_at: 2026-09-09
+last_modified_at: 2026-10-15
 author: iStar
 catalog: true
-series: gpu-runtime-precision
-series_order: 20
+series: model-quantization
+series_order: 30
 technology_year: 2022
 mathjax: true
 tags: [模型量化, GPU优化, LLM推理]
@@ -488,7 +488,7 @@ FP8 的核心不是一个 8-bit dtype，而是“编码格式 + scale granularit
 7. 真正收益依赖原生硬件、匹配 shape 的 kernel 与完整 runtime coverage；
 8. Saturation、underflow、质量、显存和 SLO goodput 必须一起验收。
 
-FP8 提供了浮点低精度的硬件基础。接下来的 SmoothQuant 会处理另一条 8-bit 路径：当 activation outliers 让 INT8 W8A8 难以量化时，怎样通过等价缩放把量化难度从 activation 迁移到更容易处理的 weights。
+FP8 使用浮点编码处理低精度表示；[SmoothQuant]({% post_url 2026-08-02-smoothquant-w8a8-activation-outliers %}) 则处理整数 W8A8 的另一种困难：通过等价缩放，把难量化的 activation 分布迁移到更容易细粒度处理的 weights。两者的编码与执行契约不同，可以对照阅读。
 
 ## 参考资料
 

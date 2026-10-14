@@ -3,11 +3,11 @@ layout: post
 title: "SmoothQuant：把 Activation Outlier 迁移到 Weight"
 subtitle: "从等价通道缩放到 W8A8 INT8 GEMM、Q/DQ 融合与 Serving 收益"
 date: 2026-08-02 09:00:00 +0800
-last_modified_at: 2026-09-09
+last_modified_at: 2026-10-15
 author: iStar
 catalog: true
-series: gpu-runtime-precision
-series_order: 30
+series: model-quantization
+series_order: 50
 technology_year: 2022
 mathjax: true
 tags: [模型量化, GPU优化, LLM推理]
@@ -444,7 +444,7 @@ SmoothQuant 的核心不是“把异常值消掉”，而是利用线性层的�
 7. Prefill 看计算吞吐，Decode 还要权衡权重带宽与 Q/DQ 固定开销；
 8. 等价性、fake quant、real kernel、任务质量与 SLO goodput 必须逐层验收。
 
-W8A8 把 weight 与 activation 都压到 8-bit，比较适合原生 INT8 矩阵乘。下一篇会继续降低 weight 精度，讨论 W4A8 如何在更高压缩率下组织两级 scale、INT4 weight 解包和 INT8 Tensor Core 计算，以及为什么“4-bit 权重”与“4-bit 乘法”不是同一件事。
+W8A8 把 weight 与 activation 都压到 8-bit，适合与原生 INT8 矩阵乘结合。[AWQ]({% post_url 2026-08-03-awq-activation-aware-weight-quantization %}) 用 activation 统计保护低比特权重，而 [W4A8]({% post_url 2026-08-04-w4a8-progressive-quantization-kernel %}) 进一步讨论 INT4 存储怎样供应 INT8 计算。阅读时应继续区分“权重占几个 bit”和“乘法使用什么精度”。
 
 ## 参考资料
 

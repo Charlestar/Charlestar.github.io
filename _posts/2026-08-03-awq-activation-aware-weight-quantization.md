@@ -3,11 +3,11 @@ layout: post
 title: "AWQ：为什么 4-bit 权重量化要先观察 Activation"
 subtitle: "从显著通道、等价缩放到 W4A16 Kernel 与端到端 Serving 收益"
 date: 2026-08-03 09:00:00 +0800
-last_modified_at: 2026-09-09
+last_modified_at: 2026-10-15
 author: iStar
 catalog: true
-series: gpu-runtime-precision
-series_order: 50
+series: model-quantization
+series_order: 70
 technology_year: 2023
 mathjax: true
 tags: [模型量化, GPU优化, LLM推理]
@@ -447,7 +447,7 @@ AWQ 的“Activation-aware”不是量化 activation，而是用 activation dist
 6. Decode 更可能受益，Prefill 是否加速取决于目标 kernel 与 roofline；
 7. 质量、real packed-kernel 正确性、显存和 SLO goodput 必须一起验收。
 
-AWQ 解释了 weight-only INT4 怎样尽量保住质量。下一步再看 FP8、W8A8 和 W4A8 时，问题会转向 activation 也进入低精度之后，outlier、scale granularity、Tensor Core format 与累加精度怎样共同决定真正的计算吞吐。
+AWQ 解释了 weight-only INT4 怎样尽量保住质量。若希望 activation 也进入低精度，可对照 [SmoothQuant]({% post_url 2026-08-02-smoothquant-w8a8-activation-outliers %}) 与 [W4A8]({% post_url 2026-08-04-w4a8-progressive-quantization-kernel %})：它们还要处理 activation 的范围、计算 operand 与累加精度，不能只沿用权重量化的结论。
 
 ## 参考资料
 
