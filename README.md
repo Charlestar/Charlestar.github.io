@@ -40,6 +40,15 @@ bundle exec ruby scripts/validate-math.rb
 
 文章审阅记录与可复算反例保存在 `scripts/reviews/`。Python 示例检查仅使用标准库（Python 3.10+）；这些检查验证特定公式、计数和状态反例，不等于真实 GPU 实测或全部内容的正确性证明。覆盖检查固定核对 2026-09-09 的 77 篇审阅记录，后续新增文章会另行提示，不冒充已经审阅。
 
+量化系列另提供一个只依赖 Python 标准库的小工具：
+
+```bash
+python -B scripts/quantization-acceptance.py --self-test
+python -B scripts/quantization-acceptance.py --input evidence.json
+```
+
+输入格式和可复算样本见[量化验收篇](_posts/2026-10-15-quantization-acceptance-engineering.md)。两个模式互斥；输入错误、数值范围错误和 packing parity 失败会非零退出。成功输出仍保留全栈 `incomplete`：它只检查所提供的 CPU 数值/布局数据，不认证来源、不同数据组的同源关系、真实 GPU 内核、模型任务质量或服务性能。独立专项由既有 `run-examples.mjs` 自动执行。
+
 ## 撰写文章
 
 复制 `_drafts/template.md`，在 `_posts/` 中创建 `YYYY-MM-DD-slug.md`：

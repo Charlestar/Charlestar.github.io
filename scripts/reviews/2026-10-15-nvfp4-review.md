@@ -64,3 +64,5 @@ node scripts/audit-posts.mjs
 ## 六、主代理最终检查
 
 主代理阅读全文与全部专项，独立运行8组专项、全部31个JavaScript套件、既有Python套件、97篇元数据及历史coverage，全部通过。生产构建生成112个HTML页面、137个文件；90篇数学文章的1372个行内和1022个独立公式通过结构检查。浏览器本地读到66个MathJax容器、0个错误，无美元残留和整页横向溢出；scale误差表与推导实际截图可读。待单篇推送后另记匹配CI和线上证据，不将源码/CPU/构建检查扩为官方后端或GPU结果。
+
+单篇提交 `c25ebfed4fb9771d9d012ce756484388e1aed542` 已推送；[工作流38629706622](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38629706622) build/deploy均成功。浏览器实际读回[线上文章](https://charlestar.github.io/2026/10/15/nvfp4-mxfp4-format/)，最终frexp阈值说明与2×17逐行补齐40B段均存在，66个MathJax容器、0个错误，无美元残留或整页横向溢出。初次按纯字符串`40 字节`匹配因MathJax文本节点换行返回false，随后直接读该实际段落确认算式，未将字符串不匹配误报成部署失败。
