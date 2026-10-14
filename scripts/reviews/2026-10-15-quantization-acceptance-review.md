@@ -105,3 +105,5 @@ node scripts/audit-posts.mjs
 ## 六、主代理最终检查
 
 主代理完整阅读正文、工具、独立专项及最终修订，独立运行7组专项（180次真实CLI、60项工具自测），全部32个JavaScript套件、既有Python、98篇元数据与历史coverage、diff检查均通过。生产构建生成113个HTML页面、138个文件；91篇数学文章的1399个行内与1031个独立公式通过结构检查。浏览器实际读回本地36个MathJax容器、0个错误，无美元残留和整页横向溢出；PPL推导的实际截图可读，回滚段与GitHub工具链接正确。README仅补充工具用法和CPU作用域说明。待单篇推送后另记exact-head CI与线上证据；没有扩大模型/GPU/服务验证范围。
+
+文章与工具的单篇提交 `375c9dea45acea2c019172527a208fc4410b9020` 已推送；匹配的[工作流38632272380](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38632272380) build/deploy均成功。浏览器实际读回[线上终篇](https://charlestar.github.io/2026/10/15/quantization-acceptance-engineering/)，最终整数/小数精度、稳定KL及回滚段存在，36个公式容器、0个错误，无美元残留或整页横向溢出；线上系列页另读回12个正确顺序的文章链接。
