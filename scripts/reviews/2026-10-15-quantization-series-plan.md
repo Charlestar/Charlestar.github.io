@@ -18,12 +18,12 @@
 | 40 | 2022-10-31 | GPTQ 层重建与误差补偿 | 校准输入、二次目标、近似二阶信息、逐列补偿、分块/Cholesky、damping；独立二次目标算例 | 新增 | 已上线，见下方发布证据 |
 | 50 | 2022-11-18 | SmoothQuant 等价通道缩放 | alpha 的真实作用、输入维与输出维、folding 分叉、W8A8 的运行时边界；缩放等价性与量化后误差 | 保留旧 URL，逐篇校订 | 全文复审已上线，见下方发布证据 |
 | 60 | 2023-05-23 | QLoRA 与 NF4 | 非均匀码本、分块 absmax、double quant、冻结基座与 LoRA 梯度、存储/计算精度、合并再量化；小码本与梯度数据流 | 新增 | 已上线，见下方发布证据 |
-| 70 | 2023-06-01 | AWQ 保护显著权重 | activation salience、等价缩放的 group 耦合、clipping、W4A16 packing；权重 MSE 与输出误差不同的反例 | 保留旧 URL，逐篇校订 | 全文复审及本地验收通过，待发布核验 |
-| 80 | 2024-02-05 | KIVI 的非对称 KV 量化 | K/V 不同量化轴、group 与残余高精度区、增量写入、Attention 误差；实际布局和容量计算 | 新增 | 调研与写作/审核来源预读完成，待逐篇写作 |
-| 90 | 2024-03-30 | QuaRot 的正交旋转 | Hadamard 与离群值、图不变性、norm/残差/非线性/RoPE 边界、离线 folding 与在线开销；等价及不等价算例，比较 SpinQuant | 新增 | 待调研 |
-| 100 | 2024-05-07 | W4A8 与 QServe | 两级整数表示、protected range、nibble 解包、scale 与零点修正、计算布局；枚举边界与 unpack reference | 保留旧 URL，逐篇校订 | 已迁系列，待本轮全文复审 |
-| 110 | 2025，NVFP4 专题 | NVFP4 与块缩放 | E2M1、MXFP4 与 NVFP4 区别、块/全局 scale、metadata、转置和 kernel 契约；枚举 FP4 levels 与真实字节成本 | 新增 | 待调研 |
-| 120 | 2026，工程综合 | 量化模型的校准与上线验收 | 校准/选择/独立评估的数据隔离、数值与真实 kernel parity、任务质量、P/D 性能、fallback、manifest/回滚；可运行的小型验收工具 | 新增 | 待调研 |
+| 70 | 2023-06-01 | AWQ 保护显著权重 | activation salience、等价缩放的 group 耦合、clipping、W4A16 packing；权重 MSE 与输出误差不同的反例 | 保留旧 URL，逐篇校订 | 全文复审已上线，见下方发布证据 |
+| 80 | 2024-02-05 | KIVI 的非对称 KV 量化 | K/V 不同量化轴、group 与残余高精度区、增量写入、Attention 误差；实际布局和容量计算 | 新增 | 独立复审与本地验收通过，待发布核验 |
+| 90 | 2024-03-30 | QuaRot 的正交旋转 | Hadamard 与离群值、图不变性、norm/残差/非线性/RoPE 边界、离线 folding 与在线开销；等价及不等价算例，比较 SpinQuant | 新增 | 调研与独立来源预读完成，待逐篇写作 |
+| 100 | 2024-05-07 | W4A8 与 QServe | 两级整数表示、protected range、nibble 解包、scale 与零点修正、计算布局；枚举边界与 unpack reference | 保留旧 URL，逐篇校订 | 调研完成，待本轮全文校订与独立复审 |
+| 110 | 2025，NVFP4 专题 | NVFP4 与块缩放 | E2M1、MXFP4 与 NVFP4 区别、块/全局 scale、metadata、转置和 kernel 契约；枚举 FP4 levels 与真实字节成本 | 新增 | 调研完成，源实现边界补查中，待逐篇写作 |
+| 120 | 2026，工程综合 | 量化模型的校准与上线验收 | 校准/选择/独立评估的数据隔离、数值与真实 kernel parity、任务质量、P/D 性能、fallback、manifest/回滚；可运行的小型验收工具 | 新增 | 调研完成，待逐篇写作与工具验证 |
 
 日期依据来自原论文 arXiv 的 v1 submission history；详细来源、日期及范围由相邻 `2026-10-15-quantization-series-research.md` 记录，未完成研究的条目不假装已阅读全文。文章标题可以在不改变主题与交付范围的前提下精修。
 
@@ -108,3 +108,11 @@ NVFP4 KV Cache、QuantSpec、FP4 Attention 等既有文章继续保留在原主�
 保留原日期与 URL，完成激活统计、20 候选、组间误差反例、非线性折叠及固定 artifact 的独立复审。三块真实 Python 和 7 组专项通过，含独立高精度前向搜索、100 个联合 clipping 组合与真实源布局的 padding 预算。全部 27 个 JavaScript 套件、既有 Python、94 篇元数据/历史 coverage 通过。生产构建生成 109 个 HTML 页面、134 个文件，87 篇数学文章的 1002 个行内与 963 个独立公式通过结构检查。
 
 本地浏览器读到 125 个 MathJax 容器、0 个错误、无美元残留和整页横向溢出，clipping 公式截图正常。发布证据待推送后登记；没有真实 AWQ 校准、Torch、官方 packing、TinyChat、GPU 或模型质量实验。
+
+校订提交 `27f23eabaa66f17eb2a0aee18799982a61cd43ae` 已推送；[工作流 38622504797](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38622504797) 的 build/deploy 均成功。浏览器实际读回原线上 URL，最终 guard 和 clipping 反例在正文中，125 个 MathJax 容器、0 个错误、无美元残留或横向溢出。
+
+### 第八篇 KIVI
+
+新增 `_posts/2026-10-15-kivi-kv-cache-axes.md`，围绕量化轴、Attention 误差、增量状态与混合路径完成全文独立审核。三个实际 Python 块和 8 组专项通过，含 980 个有理数网格、全部 256 个 byte、多周期闭式 token 集合、独立 Decimal softmax 与 410 KiB 字节枚举。全部 28 个 JavaScript 套件、既有 Python、95 篇元数据和历史 coverage 通过；生产构建生成 110 个 HTML 页面、135 个文件，88 篇数学文章的 1104 个行内和 978 个独立公式通过结构检查。
+
+本地浏览器实际读回最终标题与正文，117 个公式容器、0 个错误、无美元残留或整页横向溢出，计算/持久化时序截图排版正常。发布证据待推送后登记；没有官方 KIVI packing、Torch/Triton/CUDA、模型任务或 GPU 性能实验。

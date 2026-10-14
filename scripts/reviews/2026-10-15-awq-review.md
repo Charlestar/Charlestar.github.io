@@ -60,3 +60,7 @@ writer 静止后独立全文审核概念、公式、维度、搜索代理、数�
 最终三块实际代码及 7 组专项复跑通过；全部 27 个 JavaScript 审核套件、既有 Python、94 篇元数据和历史 coverage 检查通过，`git diff --check` 无空白错误。实际生产构建生成 109 个 HTML 页面、134 个文件；87 篇文章中的 1002 个原生行内公式和 963 个独立公式通过结构检查。
 
 浏览器实际打开原本地 URL：125 个 MathJax 容器、0 个渲染错误、无单双美元残留，1265 像素视口无整页横向溢出，clipping 定义与分组误差公式截图正常。此项没有执行真实模型或 GPU，发布结果另记。
+
+## 发布核验
+
+提交 `27f23eabaa66f17eb2a0aee18799982a61cd43ae` 已推送至 origin/master；匹配的 [工作流 38622504797](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38622504797) build/deploy 均 completed/success。浏览器实际读回 [原线上 URL](https://charlestar.github.io/2026/08/03/awq-activation-aware-weight-quantization/)，最终数值 guard 与 clipping 反例均存在，125 个公式容器、0 个错误，无美元残留或整页横向溢出。没有把部署成功扩展成真实 GPU/模型实验。
