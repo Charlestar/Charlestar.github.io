@@ -21,8 +21,8 @@
 | 70 | 2023-06-01 | AWQ 保护显著权重 | activation salience、等价缩放的 group 耦合、clipping、W4A16 packing；权重 MSE 与输出误差不同的反例 | 保留旧 URL，逐篇校订 | 全文复审已上线，见下方发布证据 |
 | 80 | 2024-02-05 | KIVI 的非对称 KV 量化 | K/V 不同量化轴、group 与残余高精度区、增量写入、Attention 误差；实际布局和容量计算 | 新增 | 已上线，见下方发布证据 |
 | 90 | 2024-03-30 | QuaRot 的正交旋转 | Hadamard 与离群值、图不变性、norm/残差/非线性/RoPE 边界、离线 folding 与在线开销；等价及不等价算例，比较 SpinQuant | 新增 | 已上线，见下方发布证据 |
-| 100 | 2024-05-07 | W4A8 与 QServe | 两级整数表示、protected range、nibble 解包、scale 与零点修正、计算布局；枚举边界与 unpack reference | 保留旧 URL，逐篇校订 | 全文复审与本地检查通过，待发布核验 |
-| 110 | 2025，NVFP4 专题 | NVFP4 与块缩放 | E2M1、MXFP4 与 NVFP4 区别、块/全局 scale、metadata、转置和 kernel 契约；枚举 FP4 levels 与真实字节成本 | 新增 | 调研完成，源实现边界补查中，待逐篇写作 |
+| 100 | 2024-05-07 | W4A8 与 QServe | 两级整数表示、protected range、nibble 解包、scale 与零点修正、计算布局；枚举边界与 unpack reference | 保留旧 URL，逐篇校订 | 全文复审已上线，见下方发布证据 |
+| 110 | 2025，NVFP4 专题 | NVFP4 与块缩放 | E2M1、MXFP4 与 NVFP4 区别、块/全局 scale、metadata、转置和 kernel 契约；枚举 FP4 levels 与真实字节成本 | 新增 | 全文独审与本地检查通过，待发布核验 |
 | 120 | 2026，工程综合 | 量化模型的校准与上线验收 | 校准/选择/独立评估的数据隔离、数值与真实 kernel parity、任务质量、P/D 性能、fallback、manifest/回滚；可运行的小型验收工具 | 新增 | 调研完成，待逐篇写作与工具验证 |
 
 日期依据来自原论文 arXiv 的 v1 submission history；详细来源、日期及范围由相邻 `2026-10-15-quantization-series-research.md` 记录，未完成研究的条目不假装已阅读全文。文章标题可以在不改变主题与交付范围的前提下精修。
@@ -132,3 +132,11 @@ NVFP4 KV Cache、QuantSpec、FP4 Attention 等既有文章继续保留在原主�
 保留原日期与URL，完成两级整数、保护范围、真实tile、byte lane、修正位置和SmoothAttention的全文独立审核。三个实际Python块与7组专项通过，包括2,303,960组范围枚举、独立Fraction oracle、通用reshape/permute全1024位置以及65536个lane组合。全部30个JavaScript套件、既有Python、96篇元数据和历史coverage通过。生产构建生成111个HTML页面、136个文件，89篇数学文章的1329个行内和999个独立公式通过结构检查。
 
 本地浏览器读到143个MathJax容器、0个错误，无美元残留和整页横向溢出，保护范围推导截图排版正常。待推送后登记发布证据；没有实际运行官方converter、LMQuant、Torch/CUDA、模型质量或GPU性能实验。
+
+校订提交 `996e8a90508846b6fee69429cc130aca1c31523e` 已推送；[工作流38627887361](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38627887361) build/deploy均成功。浏览器实际读回原线上URL，最终严格整数guard与converter的最终121边界说明存在，143个公式容器、0个错误，无美元残留或横向溢出。
+
+### 第十一篇 NVFP4 / MXFP4
+
+新增 `_posts/2026-10-15-nvfp4-mxfp4-format.md`，完成码本、两级尺度、encoder边界、分组/转置、布局与字节账单独立复审。三个真实正文Python块与8组专项通过，包含全部16码/256byte、126个E4 midpoint与邻点、255个E8指数阈值及邻点、独立FP32舍入oracle和矩形Fraction GEMM。修复临界log2误选，未将参考实现当官方逐位encoder。全部31个JavaScript套件、既有Python、97篇元数据和历史coverage通过。
+
+生产构建生成112个HTML页面、137个文件；90篇数学文章的1372个行内与1022个独立公式通过结构检查。本地浏览器66个MathJax容器、0个错误，无美元残留和整页横向溢出，实际尺度表截图正常。待推送后登记发布证据；没有官方ModelOpt/Torch/TRT/CUDA或模型/GPU实验。
