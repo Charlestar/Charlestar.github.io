@@ -12,8 +12,8 @@
 
 | 顺序 | 核心技术时间 | 文章主题 | 具体内容与关键例子 | 操作 | 本次状态 |
 | --- | --- | --- | --- | --- | --- |
-| 10 | 2017-12-15 | 从实数到整数的量化数值契约 | 仿射与对称量化、scale/zero point、ties-to-even、clipping、粒度、GEMM 修正、fake quant/STE；手算与标准库代码 | 新增 | 正文、独立审核、算例、构建与本地页面通过，待线上确认 |
-| 20 | 2022-08-15 | LLM.int8 异常值分解 | vector-wise 量化、按输入特征维拆分 INT8/FP16、阈值、近似误差与实际系统成本；小矩阵分解反例 | 新增 | 待调研 |
+| 10 | 2017-12-15 | 从实数到整数的量化数值契约 | 仿射与对称量化、scale/zero point、ties-to-even、clipping、粒度、GEMM 修正、fake quant/STE；手算与标准库代码 | 新增 | 已上线，见下方发布证据 |
+| 20 | 2022-08-15 | LLM.int8 异常值分解 | vector-wise 量化、按输入特征维拆分 INT8/FP16、阈值、近似误差与实际系统成本；小矩阵分解反例 | 新增 | 正文、独立审核、算例、构建与本地页面通过，待线上确认 |
 | 30 | 2022-09-12 | FP8 格式与缩放 | E4M3/E5M2、正常/非正规数、current/delayed scaling、scale 方向与 K 维约束；编码边界与等比例缩放反例 | 保留旧 URL，逐篇校订 | 已迁系列，待本轮全文复审 |
 | 40 | 2022-10-31 | GPTQ 层重建与误差补偿 | 校准输入、二次目标、近似二阶信息、逐列补偿、分块/Cholesky、damping；独立二次目标算例 | 新增 | 待调研 |
 | 50 | 2022-11-18 | SmoothQuant 等价通道缩放 | alpha 的真实作用、输入维与输出维、folding 分叉、W8A8 的运行时边界；缩放等价性与量化后误差 | 保留旧 URL，逐篇校订 | 已迁系列，待本轮全文复审 |
@@ -62,3 +62,9 @@ NVFP4 KV Cache、QuantSpec、FP4 Attention 等既有文章继续保留在原主�
 本段只证明计划、迁移和上述检查，不证明四篇旧文的本轮全文审核已经完成；后者继续按上表逐篇推进。
 
 发布证据：迁移提交 `03dc6f3f9acdbd299a09a5a80abe671fac12ba9f` 已推送，匹配的 [工作流 38612046754](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38612046754) 的 build/deploy 均成功；浏览器已从线上 `/series/#model-quantization` 读回四篇标题与原链接。
+
+### 第一篇 数值基础
+
+正文 `_posts/2026-10-15-quantization-numerical-foundations.md`；三角色研究、写作与独立审核完成。正文三块代码直接执行，9 组专项检查通过，包含 1,395 个精确有理数格点用例；root 补充修复 GFM 误解析行内绝对值的排版问题和构建回归检查。
+
+文章提交 `d9a40f8071985322a4d7dc65ac723626576c7cdd` 已推送，匹配 [工作流 38613320553](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38613320553) 的 build/deploy 均成功。浏览器已读回 [线上文章](https://charlestar.github.io/2026/10/15/quantization-numerical-foundations/)：97 个 MathJax 容器、0 个渲染错误、无双美元残留，实际带有最终编码范围 guard。此证据不扩展为真实模型/GPU/QAT 实验。
