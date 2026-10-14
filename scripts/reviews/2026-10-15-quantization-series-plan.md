@@ -12,7 +12,7 @@
 
 | 顺序 | 核心技术时间 | 文章主题 | 具体内容与关键例子 | 操作 | 本次状态 |
 | --- | --- | --- | --- | --- | --- |
-| 10 | 2017-12-15 | 从实数到整数的量化数值契约 | 仿射与对称量化、scale/zero point、ties-to-even、clipping、粒度、GEMM 修正、fake quant/STE；手算与标准库代码 | 新增 | 调研中 |
+| 10 | 2017-12-15 | 从实数到整数的量化数值契约 | 仿射与对称量化、scale/zero point、ties-to-even、clipping、粒度、GEMM 修正、fake quant/STE；手算与标准库代码 | 新增 | 正文、独立审核、算例、构建与本地页面通过，待线上确认 |
 | 20 | 2022-08-15 | LLM.int8 异常值分解 | vector-wise 量化、按输入特征维拆分 INT8/FP16、阈值、近似误差与实际系统成本；小矩阵分解反例 | 新增 | 待调研 |
 | 30 | 2022-09-12 | FP8 格式与缩放 | E4M3/E5M2、正常/非正规数、current/delayed scaling、scale 方向与 K 维约束；编码边界与等比例缩放反例 | 保留旧 URL，逐篇校订 | 已迁系列，待本轮全文复审 |
 | 40 | 2022-10-31 | GPTQ 层重建与误差补偿 | 校准输入、二次目标、近似二阶信息、逐列补偿、分块/Cholesky、damping；独立二次目标算例 | 新增 | 待调研 |
@@ -60,3 +60,5 @@ NVFP4 KV Cache、QuantSpec、FP4 Attention 等既有文章继续保留在原主�
 本地执行：90 篇文章、10 个系列、24 个标签的结构检查通过；20 个 JavaScript 审核算例套件和既有 Python 套件通过；生产构建生成 104 个 HTML 页面和 129 个文件；83 篇数学文章中的 538 个行内公式和 896 个独立公式通过结构检查。浏览器实查量化系列四篇按 FP8、SmoothQuant、AWQ、W4A8 排列，原 URL 正确，1265 像素视口没有整页横向溢出。
 
 本段只证明计划、迁移和上述检查，不证明四篇旧文的本轮全文审核已经完成；后者继续按上表逐篇推进。
+
+发布证据：迁移提交 `03dc6f3f9acdbd299a09a5a80abe671fac12ba9f` 已推送，匹配的 [工作流 38612046754](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38612046754) 的 build/deploy 均成功；浏览器已从线上 `/series/#model-quantization` 读回四篇标题与原链接。

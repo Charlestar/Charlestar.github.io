@@ -31,7 +31,6 @@ site.posts.docs.each do |post|
   options = site.config.fetch("kramdown", {}).transform_keys(&:to_sym)
   document = Kramdown::Document.new(post.content, **options)
   expected = math_nodes(document.root)
-  next if expected.empty?
 
   output_path = post.destination(site.dest)
   unless File.file?(output_path)
@@ -42,6 +41,17 @@ site.posts.docs.each do |post|
   # Exclude verbatim examples: TeX in code is not evidence of rendered prose.
   html = File.read(output_path, encoding: "UTF-8")
   html = html.gsub(/<(pre|code)\b[^>]*>.*?<\/\1>/m, "")
+
+  # Native-node comparison alone misses math that Markdown never parsed:
+  # unescaped pipes can turn an inline formula into a GFM table. Reject raw
+  # double-dollar delimiters left in rendered prose, even with no math nodes.
+  prose = html.gsub(/<(script|style)\b[^>]*>.*?<\/\1>/m, "")
+  prose = CGI.unescapeHTML(prose.gsub(/<[^>]*>/m, ""))
+  if prose.include?("$$")
+    failures << "#{post.relative_path}: unrendered double-dollar math delimiter in built prose (check Markdown/table parsing)"
+  end
+  next if expected.empty?
+
   available = Hash.new(0)
   html.scan(/\\\((.*?)\\\)|\\\[(.*?)\\\]/m) do |inline, display|
     category, formula = inline ? [:span, inline] : [:block, display]
