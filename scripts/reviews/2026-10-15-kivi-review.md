@@ -72,3 +72,7 @@ node scripts/reviews/oct15-kivi-examples.mjs
 三个实际代码块与 8 组专项复跑通过；全部 28 个 JavaScript 审核套件、既有 Python、95 篇元数据和历史 coverage 通过，`git diff --check` 无空白错误。实际生产构建生成 110 个 HTML 页面和 135 个文件；88 篇文章的 1104 个原生行内与 978 个独立公式通过结构检查。
 
 本地浏览器读到最终标题“为什么选择不同的量化轴”，117 个 MathJax 容器、0 个错误、无单双美元残留，1265 像素视口无整页横向溢出；计算/持久化两时点的时序截图正常。这里没有运行真实模型或 GPU，提交与部署证据另记。
+
+## 七、发布核验
+
+文章提交 `7ac8e30f07621e78b026dba39f39c50f549c67a7` 已推送至 origin/master；对应 [工作流 38624035565](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38624035565) build/deploy 均 completed/success。浏览器实际读回 [线上 URL](https://charlestar.github.io/2026/10/15/kivi-kv-cache-axes/)，最终标题、tuning-free 解释和严格 bytes/length guard 在正文中，117 个 MathJax 容器、0 个错误，无美元残留或整页横向溢出。此发布证据不表示已运行真实 KIVI 模型或 GPU。

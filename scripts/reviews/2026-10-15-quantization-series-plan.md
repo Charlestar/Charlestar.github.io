@@ -19,9 +19,9 @@
 | 50 | 2022-11-18 | SmoothQuant 等价通道缩放 | alpha 的真实作用、输入维与输出维、folding 分叉、W8A8 的运行时边界；缩放等价性与量化后误差 | 保留旧 URL，逐篇校订 | 全文复审已上线，见下方发布证据 |
 | 60 | 2023-05-23 | QLoRA 与 NF4 | 非均匀码本、分块 absmax、double quant、冻结基座与 LoRA 梯度、存储/计算精度、合并再量化；小码本与梯度数据流 | 新增 | 已上线，见下方发布证据 |
 | 70 | 2023-06-01 | AWQ 保护显著权重 | activation salience、等价缩放的 group 耦合、clipping、W4A16 packing；权重 MSE 与输出误差不同的反例 | 保留旧 URL，逐篇校订 | 全文复审已上线，见下方发布证据 |
-| 80 | 2024-02-05 | KIVI 的非对称 KV 量化 | K/V 不同量化轴、group 与残余高精度区、增量写入、Attention 误差；实际布局和容量计算 | 新增 | 独立复审与本地验收通过，待发布核验 |
-| 90 | 2024-03-30 | QuaRot 的正交旋转 | Hadamard 与离群值、图不变性、norm/残差/非线性/RoPE 边界、离线 folding 与在线开销；等价及不等价算例，比较 SpinQuant | 新增 | 调研与独立来源预读完成，待逐篇写作 |
-| 100 | 2024-05-07 | W4A8 与 QServe | 两级整数表示、protected range、nibble 解包、scale 与零点修正、计算布局；枚举边界与 unpack reference | 保留旧 URL，逐篇校订 | 调研完成，待本轮全文校订与独立复审 |
+| 80 | 2024-02-05 | KIVI 的非对称 KV 量化 | K/V 不同量化轴、group 与残余高精度区、增量写入、Attention 误差；实际布局和容量计算 | 新增 | 已上线，见下方发布证据 |
+| 90 | 2024-03-30 | QuaRot 的正交旋转 | Hadamard 与离群值、图不变性、norm/残差/非线性/RoPE 边界、离线 folding 与在线开销；等价及不等价算例，比较 SpinQuant | 新增 | 独立复审及本地验收通过，待发布核验 |
+| 100 | 2024-05-07 | W4A8 与 QServe | 两级整数表示、protected range、nibble 解包、scale 与零点修正、计算布局；枚举边界与 unpack reference | 保留旧 URL，逐篇校订 | 调研及独立来源预读完成，待逐篇校订 |
 | 110 | 2025，NVFP4 专题 | NVFP4 与块缩放 | E2M1、MXFP4 与 NVFP4 区别、块/全局 scale、metadata、转置和 kernel 契约；枚举 FP4 levels 与真实字节成本 | 新增 | 调研完成，源实现边界补查中，待逐篇写作 |
 | 120 | 2026，工程综合 | 量化模型的校准与上线验收 | 校准/选择/独立评估的数据隔离、数值与真实 kernel parity、任务质量、P/D 性能、fallback、manifest/回滚；可运行的小型验收工具 | 新增 | 调研完成，待逐篇写作与工具验证 |
 
@@ -116,3 +116,11 @@ NVFP4 KV Cache、QuantSpec、FP4 Attention 等既有文章继续保留在原主�
 新增 `_posts/2026-10-15-kivi-kv-cache-axes.md`，围绕量化轴、Attention 误差、增量状态与混合路径完成全文独立审核。三个实际 Python 块和 8 组专项通过，含 980 个有理数网格、全部 256 个 byte、多周期闭式 token 集合、独立 Decimal softmax 与 410 KiB 字节枚举。全部 28 个 JavaScript 套件、既有 Python、95 篇元数据和历史 coverage 通过；生产构建生成 110 个 HTML 页面、135 个文件，88 篇数学文章的 1104 个行内和 978 个独立公式通过结构检查。
 
 本地浏览器实际读回最终标题与正文，117 个公式容器、0 个错误、无美元残留或整页横向溢出，计算/持久化时序截图排版正常。发布证据待推送后登记；没有官方 KIVI packing、Torch/Triton/CUDA、模型任务或 GPU 性能实验。
+
+文章提交 `7ac8e30f07621e78b026dba39f39c50f549c67a7` 已推送；[工作流 38624035565](https://github.com/Charlestar/Charlestar.github.io/actions/runs/38624035565) build/deploy 均成功。浏览器实际读回 [线上文章](https://charlestar.github.io/2026/10/15/kivi-kv-cache-axes/)，最终标题、tuning-free 解释和 bytes guard 均存在，117 个公式容器、0 个错误，无美元残留或横向溢出。
+
+### 第九篇 QuaRot / SpinQuant
+
+新增 `_posts/2026-10-15-quarot-spinquant-rotation.md`。全文及三个真实代码块通过独立审核；7 组专项覆盖精确旋转格点、Decimal 两块网络、非对称 4D/非方阵、错误融合注入、多头/GQA 数学映射与 mask、精确 Gauss-Jordan Cayley 和有限迭代反例。全部 29 个 JavaScript 套件、既有 Python、96 篇元数据与历史 coverage 通过。生产构建生成 111 个 HTML 页面、136 个文件，89 篇数学文章的 1196 个行内和 998 个独立公式通过结构检查。
+
+本地浏览器读到 112 个 MathJax 容器、0 个错误、无美元残留和整页横向溢出，残差与 RMS 等变公式截图正常，实际正文保留两项首发日期。发布证据待推送后登记；没有真实旋转学习、完整 Transformer、INT4 kernel、模型质量或 GPU 性能实验。
